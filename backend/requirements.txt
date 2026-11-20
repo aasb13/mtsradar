@@ -4,6 +4,7 @@ sqlalchemy[asyncio]==2.1.9
 alembic==1.20.1
 asyncpg==0.32.0
 redis==8.1.0
+openai==3.57.0
 pydantic-settings==2.16.3
 pytest==9.2.0
 httpx
