@@ -11,14 +11,15 @@ from fastapi import WebSocket
 
 from app.incidents import (
     Change,
+    FINAL_STAGE,
     Snapshot,
-    apply_state_change,
+    apply_stage_change,
     build_snapshot,
     diff_snapshots,
-    incident_payload,
     load_records,
-    transition_denied_reason,
-    TRANSITIONS,
+    payload_from_view,
+    stage_denied_reason,
+    stage_of,
     ws_snapshot_message,
     ws_update_message,
 )
@@ -78,22 +79,24 @@ class Store:
     async def unregister_client(self, websocket: WebSocket) -> None:
         self._clients.discard(websocket)
 
-    async def apply_state(self, incident_id: str, new_state_id: int) -> dict | None:
+    async def apply_stage(self, incident_id: str, new_stage_id: int) -> dict | None:
         async with self._mutation_lock:
             try:
                 records = load_records(self._data_file.read_bytes())
             except (OSError, ValueError) as exc:
-                raise ValueError(f"Файл данных недоступен, изменение состояния невозможно: {exc}") from exc
+                raise ValueError(f"Файл данных недоступен, изменение колонки невозможно: {exc}") from exc
             record = next((item for item in records if item["id"] == incident_id), None)
             if record is None:
                 return None
-            current_state_id = record["stateId"]
-            if new_state_id not in TRANSITIONS.get(current_state_id, frozenset()):
-                raise StateTransitionError(transition_denied_reason(current_state_id, new_state_id))
+            if stage_of(record) == FINAL_STAGE and new_stage_id != FINAL_STAGE:
+                raise StateTransitionError(stage_denied_reason(new_stage_id))
             now = datetime.now(timezone.utc)
-            apply_state_change(record, new_state_id, now)
+            apply_stage_change(record, new_stage_id, now)
             self._write_records(records)
-            return incident_payload(record, now)
+            # Мгновенная рассылка: карточка переезжает у всех клиентов сразу,
+            # не дожидаясь ближайшего опроса файла.
+            await self._commit(records, now)
+            return payload_from_view(self._snapshot.views[incident_id])
 
     def _write_records(self, records: list[dict]) -> None:
         text = json.dumps(records, ensure_ascii=False, indent=2) + "\n"
@@ -122,10 +125,20 @@ class Store:
         except (OSError, ValueError) as exc:
             logger.error("Файл данных %s повреждён или нечитаем, используется предыдущий снимок: %s", self._data_file, exc)
             return
+        async with self._mutation_lock:
+            await self._commit(records, datetime.now(timezone.utc))
+
+    async def _commit(self, records: list[dict], now: datetime) -> None:
+        # Инвариант: вызывается под _mutation_lock, иначе опрос может
+        # откатить снимок на состояние, предшествующее записи переноса.
         previous = self._snapshot
-        current = build_snapshot(records, datetime.now(timezone.utc))
+        current = build_snapshot(records, now)
         self._snapshot = current
-        self._stat_key = (stat.st_mtime_ns, stat.st_size)
+        try:
+            stat = self._data_file.stat()
+            self._stat_key = (stat.st_mtime_ns, stat.st_size)
+        except OSError as exc:
+            logger.warning("Не удалось зафиксировать метаданные файла данных: %r", exc)
         changes = diff_snapshots(previous, current) if previous is not None else []
         if changes:
             logger.info("Файл данных изменён: %d событий", len(changes))

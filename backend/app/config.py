@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     cors_origins: str = "http://localhost:5173"
     data_file: Path = BACKEND_DIR.parent / "data" / "character_problems.json"
-    watch_interval_seconds: float = 1.0
+    watch_interval_seconds: float = 0.2
 
     @property
     def allowed_origins(self) -> list[str]:

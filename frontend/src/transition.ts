@@ -1,27 +1,19 @@
 import type { Incident } from './types'
 import { fetchIncidents } from './api'
-import { statusName } from './format'
+import { FINAL_STAGE, stageName } from './format'
 
 /**
- * Разрешённые переходы статусов — зеркальная копия карты бэкенда
- * (app/incidents.py TRANSITIONS). Из «Закрыт» выходов нет: повторный
+ * Колонка «Инцидент полностью завершен» — финальная: карточки можно
+ * перетаскивать в любую другую колонку, но не из неё. Повторный
  * инцидент заводится как новая запись.
  */
-export const ALLOWED_TRANSITIONS: Record<number, readonly number[]> = {
-  0: [2, 7],
-  2: [0, 7],
-  7: [2, 20, 10],
-  20: [2, 10],
-  10: [],
-}
-
 export function isTransitionAllowed(from: number, to: number): boolean {
-  return (ALLOWED_TRANSITIONS[from] ?? []).includes(to)
+  return from !== FINAL_STAGE && from !== to
 }
 
 export function invalidReason(from: number, to: number): string {
-  if (from === 10) return 'Закрытый инцидент нельзя вернуть в работу — создаётся новый инцидент'
-  return `Переход «${statusName(from)}» → «${statusName(to)}» не разрешён`
+  if (from === FINAL_STAGE) return 'Полностью завершенный инцидент нельзя вернуть в работу — создаётся новый инцидент'
+  return `Переход «${stageName(from)}» → «${stageName(to)}» не разрешён`
 }
 
 let wsSeq = 0
@@ -50,39 +42,39 @@ const WS_CONFIRM_TIMEOUT_MS = 2000
 const CONFIRM_POLL_MS = 150
 
 /**
- * Смена статуса перетаскиванием. Без оптимистичного переноса: карточку
- * двигает только WS-обновление; если подтверждения нет 2 с — контрольный
- * запрос GET /api/incidents. Повторный дроп по тому же инциденту, пока
- * запрос в полёте, игнорируется.
+ * Перенос карточки в другую колонку. Без оптимистичного переноса: карточку
+ * двигает только WS-обновление, которое сервер рассылает сразу после записи
+ * файла; если подтверждения нет 2 с — контрольный запрос GET /api/incidents.
+ * Повторный дроп по тому же инциденту, пока запрос в полёте, игнорируется.
  */
-export async function transitionState(incidentId: string, targetStateId: number, hooks: TransitionHooks): Promise<void> {
+export async function transitionStage(incidentId: string, targetStageId: number, hooks: TransitionHooks): Promise<void> {
   if (inFlight.has(incidentId)) return
   inFlight.add(incidentId)
   hooks.onMoveStarted(incidentId)
   const seqBefore = wsSeq
   try {
-    const res = await fetch(`/api/incidents/${encodeURIComponent(incidentId)}/state`, {
+    const res = await fetch(`/api/incidents/${encodeURIComponent(incidentId)}/stage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stateId: targetStateId }),
+      body: JSON.stringify({ stageId: targetStageId }),
     })
     if (!res.ok) {
-      hooks.onFailed(`Не удалось изменить статус ${incidentId}: ${await errorReason(res)}`)
+      hooks.onFailed(`Не удалось перенести карточку ${incidentId}: ${await errorReason(res)}`)
       return
     }
-    hooks.onApplied(`${incidentId} → ${statusName(targetStateId)}`)
+    hooks.onApplied(`${incidentId} → ${stageName(targetStageId)}`)
     const confirmed = await waitUntil(() => (wsSeen.get(incidentId) ?? 0) > seqBefore, WS_CONFIRM_TIMEOUT_MS)
     if (!confirmed) {
       try {
         const data = await fetchIncidents()
         hooks.onResync(data.incidents)
       } catch (err) {
-        console.error('Не удалось обновить данные после смены статуса', err)
+        console.error('Не удалось обновить данные после переноса карточки', err)
       }
     }
   } catch (err) {
-    console.error('Ошибка запроса смены статуса инцидента', err)
-    hooks.onFailed(`Не удалось изменить статус ${incidentId}: сервер недоступен`)
+    console.error('Ошибка запроса переноса карточки', err)
+    hooks.onFailed(`Не удалось перенести карточку ${incidentId}: сервер недоступен`)
   } finally {
     inFlight.delete(incidentId)
     hooks.onMoveFinished(incidentId)

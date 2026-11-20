@@ -31,15 +31,21 @@ STATE_ENUMS = {
     20: "Research",
 }
 
-TRANSITIONS = {
-    0: frozenset({2, 7}),
-    2: frozenset({0, 7}),
-    7: frozenset({2, 20, 10}),
-    20: frozenset({2, 10}),
-    10: frozenset(),
+# Колонки канбан-доски. В данных один статус «Назначен» (0) покрывает три
+# первых колонки, поэтому колонка хранится отдельно в поле stageId.
+STAGE_NAMES = {
+    1: "Ожидает координатора",
+    2: "Ожидает прикрепления команды",
+    3: "Ожидает решения инцидента",
+    4: "В процессе решения",
+    5: "QA",
+    6: "Ожидает разбора (причины)",
+    7: "Инцидент полностью завершен",
 }
 
-ALLOWED_STATES = frozenset(TRANSITIONS)
+STAGE_STATE_IDS = {1: 0, 2: 0, 3: 0, 4: 2, 5: 7, 6: 20, 7: 10}
+STAGES = frozenset(STAGE_STATE_IDS)
+FINAL_STAGE = 7
 
 _DIFF_EXCLUDED_KEYS = frozenset({"stateId", "priorityId", "deadline"})
 _FRACTION_RE = re.compile(r"\.(\d+)")
@@ -61,6 +67,7 @@ class Change(TypedDict):
 class RecordView:
     id: str
     state_id: int
+    stage_id: int | None
     priority_id: int | None
     deadline: str | None
     deadline_dt: datetime | None
@@ -145,6 +152,27 @@ def derive_groups(record: dict, state_id: int, deadline_dt: datetime | None, now
     return frozenset(groups)
 
 
+def derive_stage(record: dict, state_id: int) -> int | None:
+    """Колонка доски: явный stageId из записи либо вывод из статуса и полей назначения."""
+    stage_id = record.get("stageId")
+    if isinstance(stage_id, int) and not isinstance(stage_id, bool) and stage_id in STAGE_STATE_IDS:
+        return stage_id
+    if state_id == 0:
+        if not str(record.get("assignedGroupName") or "").strip():
+            return 2
+        if not str(record.get("assignedEmployee") or "").strip():
+            return 1
+        return 3
+    for stage, state in STAGE_STATE_IDS.items():
+        if state == state_id:
+            return stage
+    return None
+
+
+def stage_of(record: dict) -> int | None:
+    return derive_stage(record, record["stateId"])
+
+
 def compute_sla(state_id: int, deadline_dt: datetime | None, submit_date: datetime, now: datetime) -> Sla:
     if state_id in RESOLVED_STATES:
         return {"state": "done", "timeLeftSeconds": None, "totalSeconds": None, "overdueSeconds": None}
@@ -178,6 +206,7 @@ def make_view(record: dict, now: datetime) -> RecordView:
     return RecordView(
         id=record["id"],
         state_id=state_id,
+        stage_id=derive_stage(record, state_id),
         priority_id=record.get("priorityId"),
         deadline=deadline_raw,
         deadline_dt=deadline_dt,
@@ -247,6 +276,7 @@ def compute_summary(views: dict[str, RecordView], now: datetime) -> dict:
 def payload_from_view(view: RecordView) -> dict:
     return {
         **view.record,
+        "stageId": view.stage_id,
         "groups": [group for group in GROUP_ORDER if group in view.groups],
         "sla": dict(view.sla),
     }
@@ -328,19 +358,16 @@ def apply_state_change(record: dict, new_state_id: int, now: datetime) -> None:
         record["completionDate"] = None
 
 
-def transition_denied_reason(current_state_id: int, new_state_id: int) -> str:
-    if current_state_id == 10:
-        return "Закрытый инцидент нельзя вернуть в работу — по процессу создаётся новый инцидент."
-    current_label = STATE_NAMES.get(current_state_id, f"неизвестный статус {current_state_id}")
-    new_label = STATE_NAMES.get(new_state_id, f"статус {new_state_id}")
-    allowed_ids = TRANSITIONS.get(current_state_id, frozenset())
-    if allowed_ids:
-        allowed = ", ".join(STATE_NAMES[s] for s in sorted(allowed_ids))
-        return (
-            f"Переход из статуса «{current_label}» в «{new_label}» не разрешён. "
-            f"Допустимые переходы: {allowed}."
-        )
-    return f"Переход из статуса «{current_label}» в «{new_label}» не разрешён. Допустимых переходов нет."
+def apply_stage_change(record: dict, new_stage_id: int, now: datetime) -> None:
+    record["stageId"] = new_stage_id
+    apply_state_change(record, STAGE_STATE_IDS[new_stage_id], now)
+
+
+def stage_denied_reason(new_stage_id: int) -> str:
+    return (
+        f"Инцидент полностью завершен — колонка «{STAGE_NAMES[FINAL_STAGE]}» финальная, "
+        f"вернуть на «{STAGE_NAMES[new_stage_id]}» нельзя. По процессу создаётся новый инцидент."
+    )
 
 
 def pluralize(count: int, one: str, few: str, many: str) -> str:

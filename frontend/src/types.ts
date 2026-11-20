@@ -30,6 +30,7 @@ export interface Incident {
   solution: string | null
   state: string | null
   stateId: number
+  stageId: number | null
   priority: string | null
   priorityId: number
   urgency: string | null

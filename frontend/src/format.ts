@@ -164,10 +164,6 @@ export function statusLabel(incident: Incident): string {
   return STATUS_FALLBACK[incident.stateId] ?? `Статус ${incident.stateId}`
 }
 
-export function statusName(stateId: number): string {
-  return STATUS_FALLBACK[stateId] ?? `Статус ${stateId}`
-}
-
 export function statusClass(stateId: number): string {
   switch (stateId) {
     case 0:
@@ -183,6 +179,29 @@ export function statusClass(stateId: number): string {
     default:
       return 'st-unknown'
   }
+}
+
+export interface StageMeta {
+  id: number
+  label: string
+  cls: string
+}
+
+/** Колонки канбан-доски; зеркало карты бэкенда (app/incidents.py STAGE_STATE_IDS). */
+export const STAGES: readonly StageMeta[] = [
+  { id: 1, label: 'Ожидает координатора', cls: 'st-assigned' },
+  { id: 2, label: 'Ожидает прикрепления команды', cls: 'st-assigned' },
+  { id: 3, label: 'Ожидает решения инцидента', cls: 'st-assigned' },
+  { id: 4, label: 'В процессе решения', cls: 'st-wip' },
+  { id: 5, label: 'QA', cls: 'st-resolved' },
+  { id: 6, label: 'Ожидает разбора (причины)', cls: 'st-research' },
+  { id: 7, label: 'Инцидент полностью завершен', cls: 'st-closed' },
+]
+
+export const FINAL_STAGE = 7
+
+export function stageName(stageId: number): string {
+  return STAGES.find(stage => stage.id === stageId)?.label ?? `Колонка ${stageId}`
 }
 
 export function priorityMeta(priorityId: number): { label: string; cls: string } {

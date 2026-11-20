@@ -871,8 +871,8 @@ kbd {
 }
 
 .bcol {
-  flex: 0 0 276px;
-  min-width: 276px;
+  flex: 0 0 224px;
+  min-width: 224px;
   display: flex;
   flex-direction: column;
   background: var(--surface);
@@ -929,6 +929,8 @@ kbd {
   font-size: 14px;
   font-weight: 650;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .bcol__count {
@@ -996,6 +998,14 @@ kbd {
 
 .bcard--dragging {
   opacity: 0.5;
+}
+
+.bcard--flight {
+  position: fixed;
+  z-index: 60;
+  margin: 0;
+  pointer-events: none;
+  box-shadow: var(--shadow);
 }
 
 .bcard--locked {
