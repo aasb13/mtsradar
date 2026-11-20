@@ -3,10 +3,17 @@
 ## What this repo is
 
 Greenfield MTS (МТС) hackathon project: a **dashboard for IT-incident coordinators**
-(`Дашборд координатора IT-инцидентов`). There is **no code yet** — only the dataset,
-attribute dictionary, mentor chat log, and two spec documents. No git repo, no
-package manifest, no build/test/lint config, no `opencode.json`, no other instruction
-files. Do not assume a stack, framework, or dev commands exist; there are none to run.
+(`Дашборд координатора IT-инцидентов`). The repo contains a **bare stack skeleton
+only**: `backend/` (FastAPI + SQLAlchemy/Alembic + asyncpg, PostgreSQL + Redis via the
+root `docker-compose.yml`), `frontend/` (React + TypeScript + Vite), plus the dataset,
+attribute dictionary, mentor chat log, and two spec documents.
+
+## Scope: stack base only
+
+Until the user explicitly asks for a feature, do **not** build domain logic: no file
+watching or data sync, no board endpoints, no WebSocket, no AI analysis, no dashboard
+components. The deliverable is the runnable skeleton; features are added one user
+request at a time.
 
 The case is Russian-language: data values, UI labels, and all spec prose are Russian.
 Keep user-facing copy in Russian.
