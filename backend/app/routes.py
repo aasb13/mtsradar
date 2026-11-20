@@ -6,9 +6,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket
 from pydantic import BaseModel, ConfigDict
 
-from app.incidents import RecordView, Sla, ai_recommend_team, ai_risk, ai_summary
+from app.incidents import ALLOWED_STATES, RecordView, Sla, ai_recommend_team, ai_risk, ai_summary
 from app.incidents import Snapshot
-from app.service import Store
+from app.service import StateTransitionError, Store
 
 router = APIRouter(prefix="/api")
 
@@ -74,6 +74,10 @@ class AiRiskResponse(BaseModel):
 class AiRecommendTeamResponse(BaseModel):
     team: str
     reason: str
+
+
+class StateUpdateRequest(BaseModel):
+    stateId: int
 
 
 def get_store(request: Request) -> Store:
@@ -142,6 +146,22 @@ async def get_ai_recommend_team(incident_id: str, store: StoreDep) -> AiRecommen
     view = require_view(store, incident_id)
     team, reason = ai_recommend_team(view, require_snapshot(store).views)
     return AiRecommendTeamResponse(team=team, reason=reason)
+
+
+@router.post("/incidents/{incident_id}/state", response_model=IncidentOut)
+async def update_incident_state(incident_id: str, body: StateUpdateRequest, store: StoreDep) -> IncidentOut:
+    if body.stateId not in ALLOWED_STATES:
+        allowed = ", ".join(str(s) for s in sorted(ALLOWED_STATES))
+        raise HTTPException(status_code=400, detail=f"Статус {body.stateId} не поддерживается. Допустимые значения: {allowed}.")
+    try:
+        payload = await store.apply_state(incident_id, body.stateId)
+    except StateTransitionError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if payload is None:
+        raise HTTPException(status_code=404, detail=f"Инцидент {incident_id} не найден")
+    return IncidentOut(**payload)
 
 
 @router.websocket("/ws")

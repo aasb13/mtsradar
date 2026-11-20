@@ -1,7 +1,9 @@
 """Хранилище инцидентов: снимок в памяти, опрос файла данных, реестр WebSocket-клиентов."""
 
 import asyncio
+import json
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -10,14 +12,24 @@ from fastapi import WebSocket
 from app.incidents import (
     Change,
     Snapshot,
+    apply_state_change,
     build_snapshot,
     diff_snapshots,
+    incident_payload,
     load_records,
+    transition_denied_reason,
+    TRANSITIONS,
     ws_snapshot_message,
     ws_update_message,
 )
 
 logger = logging.getLogger(__name__)
+
+
+class StateTransitionError(Exception):
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)
+        self.detail = detail
 
 
 class Store:
@@ -28,6 +40,7 @@ class Store:
         self._stat_key: tuple[int, int] | None = None
         self._clients: set[WebSocket] = set()
         self._send_lock = asyncio.Lock()
+        self._mutation_lock = asyncio.Lock()
         self._poll_task: asyncio.Task | None = None
 
     @property
@@ -64,6 +77,32 @@ class Store:
 
     async def unregister_client(self, websocket: WebSocket) -> None:
         self._clients.discard(websocket)
+
+    async def apply_state(self, incident_id: str, new_state_id: int) -> dict | None:
+        async with self._mutation_lock:
+            try:
+                records = load_records(self._data_file.read_bytes())
+            except (OSError, ValueError) as exc:
+                raise ValueError(f"Файл данных недоступен, изменение состояния невозможно: {exc}") from exc
+            record = next((item for item in records if item["id"] == incident_id), None)
+            if record is None:
+                return None
+            current_state_id = record["stateId"]
+            if new_state_id not in TRANSITIONS.get(current_state_id, frozenset()):
+                raise StateTransitionError(transition_denied_reason(current_state_id, new_state_id))
+            now = datetime.now(timezone.utc)
+            apply_state_change(record, new_state_id, now)
+            self._write_records(records)
+            return incident_payload(record, now)
+
+    def _write_records(self, records: list[dict]) -> None:
+        text = json.dumps(records, ensure_ascii=False, indent=2) + "\n"
+        tmp_path = self._data_file.with_name(self._data_file.name + ".tmp")
+        with open(tmp_path, "w", encoding="utf-8") as file:
+            file.write(text)
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(tmp_path, self._data_file)
 
     async def _poll_loop(self) -> None:
         while True:

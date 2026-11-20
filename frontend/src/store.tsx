@@ -5,10 +5,12 @@ import { fetchIncidents, fetchSummary } from './api'
 import { connectDashboardSocket } from './ws'
 import { beepCritical } from './beep'
 import { FEED_TEXT, KIND_PRIORITY, TOAST_META, liveSla } from './format'
+import { noteWsUpdate } from './transition'
 
 export type FilterKey = 'all' | 'critical' | 'coordinators' | 'high_priority' | 'research' | 'breached'
 export type ConnectionState = 'connecting' | 'online' | 'reconnecting'
 export type Theme = 'light' | 'dark'
+export type ViewMode = 'board' | 'groups'
 
 export interface FeedItem {
   key: string
@@ -18,9 +20,11 @@ export interface FeedItem {
   ts: number
 }
 
+export type ToastKind = ChangeKind | 'boot_error' | 'move_ok' | 'move_invalid' | 'move_error'
+
 export interface ToastItem {
   key: string
-  kind: ChangeKind | 'boot_error'
+  kind: ToastKind
   type: ToastType
   text: string
   sticky: boolean
@@ -44,11 +48,14 @@ interface State {
   filter: FilterKey
   search: string
   theme: Theme
+  view: ViewMode
+  movingIds: string[]
   shortcutsOpen: boolean
   now: number
 }
 
 const THEME_KEY = 'mts-dashboard-theme'
+const VIEW_KEY = 'mts-dashboard-view'
 const FEED_LIMIT = 50
 const TOAST_LIMIT = 5
 
@@ -58,6 +65,12 @@ function makeInitialState(): State {
     if (window.localStorage.getItem(THEME_KEY) === 'dark') theme = 'dark'
   } catch (err) {
     console.error('Не удалось прочитать тему из localStorage', err)
+  }
+  let view: ViewMode = 'board'
+  try {
+    if (window.localStorage.getItem(VIEW_KEY) === 'groups') view = 'groups'
+  } catch (err) {
+    console.error('Не удалось прочитать режим отображения из localStorage', err)
   }
   return {
     incidents: [],
@@ -76,6 +89,8 @@ function makeInitialState(): State {
     filter: 'all',
     search: '',
     theme,
+    view,
+    movingIds: [],
     shortcutsOpen: false,
     now: Date.now(),
   }
@@ -97,6 +112,11 @@ export type Action =
   | { type: 'SET_FILTER'; filter: FilterKey }
   | { type: 'SET_SEARCH'; search: string }
   | { type: 'SET_THEME'; theme: Theme }
+  | { type: 'SET_VIEW'; view: ViewMode }
+  | { type: 'ADD_TOAST'; toast: ToastItem }
+  | { type: 'RESYNC'; incidents: Incident[] }
+  | { type: 'MOVE_START'; id: string }
+  | { type: 'MOVE_END'; id: string }
   | { type: 'TOGGLE_SHORTCUTS' }
 
 function capToasts(list: ToastItem[]): ToastItem[] {
@@ -106,6 +126,18 @@ function capToasts(list: ToastItem[]): ToastItem[] {
     result.splice(idx === -1 ? 0 : idx, 1)
   }
   return result
+}
+
+function mergeToasts(existing: ToastItem[], incoming: ToastItem[]): ToastItem[] {
+  const keys = new Set(existing.map(t => t.key))
+  const merged = [...existing]
+  for (const toast of incoming) {
+    if (!keys.has(toast.key)) {
+      keys.add(toast.key)
+      merged.push(toast)
+    }
+  }
+  return capToasts(merged)
 }
 
 function reducer(state: State, action: Action): State {
@@ -136,14 +168,7 @@ function reducer(state: State, action: Action): State {
         bootError: null,
       }
     case 'UPDATE': {
-      const existingKeys = new Set(state.toasts.map(t => t.key))
-      const mergedToasts = [...state.toasts]
-      for (const toast of action.toasts) {
-        if (!existingKeys.has(toast.key)) {
-          existingKeys.add(toast.key)
-          mergedToasts.push(toast)
-        }
-      }
+      const toasts = mergeToasts(state.toasts, action.toasts)
       return {
         ...state,
         incidents: action.incidents,
@@ -154,7 +179,7 @@ function reducer(state: State, action: Action): State {
         bootError: null,
         feed: [...action.feed, ...state.feed].slice(0, FEED_LIMIT),
         unread: state.unread + action.feed.length,
-        toasts: capToasts(mergedToasts),
+        toasts,
         ribbonDismissed: action.toasts.some(t => t.kind === 'critical_new') ? false : state.ribbonDismissed,
       }
     }
@@ -180,6 +205,16 @@ function reducer(state: State, action: Action): State {
       return { ...state, search: action.search }
     case 'SET_THEME':
       return { ...state, theme: action.theme }
+    case 'SET_VIEW':
+      return { ...state, view: action.view }
+    case 'ADD_TOAST':
+      return { ...state, toasts: mergeToasts(state.toasts, [action.toast]) }
+    case 'RESYNC':
+      return { ...state, incidents: action.incidents, syncedAt: Date.now() }
+    case 'MOVE_START':
+      return state.movingIds.includes(action.id) ? state : { ...state, movingIds: [...state.movingIds, action.id] }
+    case 'MOVE_END':
+      return { ...state, movingIds: state.movingIds.filter(id => id !== action.id) }
     case 'TOGGLE_SHORTCUTS':
       return { ...state, shortcutsOpen: !state.shortcutsOpen }
     default: {
@@ -271,6 +306,14 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   }, [state.theme])
 
   useEffect(() => {
+    try {
+      window.localStorage.setItem(VIEW_KEY, state.view)
+    } catch (err) {
+      console.error('Не удалось сохранить режим отображения в localStorage', err)
+    }
+  }, [state.view])
+
+  useEffect(() => {
     let cancelled = false
     void (async () => {
       try {
@@ -304,6 +347,11 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         }
         const { feed, toasts } = buildChangeItems(message.payload.changes, receivedAt)
         if (message.payload.changes.some(c => c.kind === 'critical_new')) beepCritical()
+        noteWsUpdate(
+          message.payload.changes.length > 0
+            ? message.payload.changes.map(c => c.id)
+            : message.payload.incidents.map(i => i.id),
+        )
         dispatch({ type: 'UPDATE', incidents: message.payload.incidents, summary: message.payload.summary, feed, toasts })
       },
     })

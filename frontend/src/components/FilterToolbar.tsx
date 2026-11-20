@@ -1,6 +1,11 @@
 import { useMemo } from 'react'
-import { useDashboard, type FilterKey } from '../store'
+import { useDashboard, type FilterKey, type ViewMode } from '../store'
 import { IconClose, IconSearch } from './Icons'
+
+const VIEWS: { key: ViewMode; label: string }[] = [
+  { key: 'board', label: 'Доска' },
+  { key: 'groups', label: 'Группы' },
+]
 
 const CHIPS: { key: FilterKey; label: string }[] = [
   { key: 'all', label: 'Все' },
@@ -25,7 +30,19 @@ export function FilterToolbar() {
   }, [state.incidents])
 
   return (
-    <section className="toolbar" aria-label="Фильтры и поиск">
+    <section className="toolbar" aria-label="Режим, фильтры и поиск">
+      <div className="toolbar__views">
+        {VIEWS.map(view => (
+          <button
+            key={view.key}
+            type="button"
+            className={`seg${state.view === view.key ? ' seg--active' : ''}`}
+            onClick={() => dispatch({ type: 'SET_VIEW', view: view.key })}
+          >
+            {view.label}
+          </button>
+        ))}
+      </div>
       <div className="toolbar__chips">
         {CHIPS.map(chip => (
           <button

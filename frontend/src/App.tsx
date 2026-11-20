@@ -5,6 +5,7 @@ import { KpiStrip } from './components/KpiStrip'
 import { CriticalRibbon } from './components/CriticalRibbon'
 import { FilterToolbar } from './components/FilterToolbar'
 import { GROUP_ORDER, GroupSection } from './components/GroupSection'
+import { KanbanBoard } from './components/KanbanBoard'
 import { IncidentDrawer } from './components/IncidentDrawer'
 import { BigDadWidget } from './components/BigDadWidget'
 import { ToastStack } from './components/ToastStack'
@@ -89,26 +90,20 @@ function Dashboard() {
             <KpiStrip />
             <CriticalRibbon />
             <FilterToolbar />
-            {hasRows ? (
+            {state.view === 'board' ? (
+              visible.length > 0 ? (
+                <KanbanBoard incidents={visible} />
+              ) : (
+                <EmptyHint />
+              )
+            ) : hasRows ? (
               sections.map(section =>
                 section.rows.length > 0 ? (
                   <GroupSection key={section.group} group={section.group} incidents={section.rows} />
                 ) : null,
               )
             ) : (
-              <div className="empty">
-                <p>По текущим фильтрам инцидентов нет</p>
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => {
-                    dispatch({ type: 'SET_FILTER', filter: 'all' })
-                    dispatch({ type: 'SET_SEARCH', search: '' })
-                  }}
-                >
-                  Сбросить фильтры
-                </button>
-              </div>
+              <EmptyHint />
             )}
             <BigDadWidget />
           </>
@@ -117,6 +112,25 @@ function Dashboard() {
       <IncidentDrawer />
       <ToastStack />
       <ShortcutsModal />
+    </div>
+  )
+}
+
+function EmptyHint() {
+  const { dispatch } = useDashboard()
+  return (
+    <div className="empty">
+      <p>По текущим фильтрам инцидентов нет</p>
+      <button
+        type="button"
+        className="btn"
+        onClick={() => {
+          dispatch({ type: 'SET_FILTER', filter: 'all' })
+          dispatch({ type: 'SET_SEARCH', search: '' })
+        }}
+      >
+        Сбросить фильтры
+      </button>
     </div>
   )
 }

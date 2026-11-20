@@ -164,6 +164,10 @@ export function statusLabel(incident: Incident): string {
   return STATUS_FALLBACK[incident.stateId] ?? `Статус ${incident.stateId}`
 }
 
+export function statusName(stateId: number): string {
+  return STATUS_FALLBACK[stateId] ?? `Статус ${stateId}`
+}
+
 export function statusClass(stateId: number): string {
   switch (stateId) {
     case 0:

@@ -23,6 +23,24 @@ STATE_NAMES = {
     20: "Исследование ситуации",
 }
 
+STATE_ENUMS = {
+    0: "Assigned",
+    2: "WorkInProgress",
+    7: "Resolved",
+    10: "Closed",
+    20: "Research",
+}
+
+TRANSITIONS = {
+    0: frozenset({2, 7}),
+    2: frozenset({0, 7}),
+    7: frozenset({2, 20, 10}),
+    20: frozenset({2, 10}),
+    10: frozenset(),
+}
+
+ALLOWED_STATES = frozenset(TRANSITIONS)
+
 _DIFF_EXCLUDED_KEYS = frozenset({"stateId", "priorityId", "deadline"})
 _FRACTION_RE = re.compile(r"\.(\d+)")
 
@@ -226,19 +244,25 @@ def compute_summary(views: dict[str, RecordView], now: datetime) -> dict:
     }
 
 
+def payload_from_view(view: RecordView) -> dict:
+    return {
+        **view.record,
+        "groups": [group for group in GROUP_ORDER if group in view.groups],
+        "sla": dict(view.sla),
+    }
+
+
+def incident_payload(record: dict, now: datetime) -> dict:
+    return payload_from_view(make_view(record, now))
+
+
 def build_snapshot(records: list[dict], now: datetime) -> Snapshot:
     views: dict[str, RecordView] = {}
     incidents: list[dict] = []
     for record in records:
         view = make_view(record, now)
         views[view.id] = view
-        incidents.append(
-            {
-                **record,
-                "groups": [group for group in GROUP_ORDER if group in view.groups],
-                "sla": dict(view.sla),
-            }
-        )
+        incidents.append(payload_from_view(view))
     return Snapshot(
         generated_at=now,
         incidents=incidents,
@@ -288,6 +312,35 @@ def diff_snapshots(previous: Snapshot, current: Snapshot) -> list[Change]:
         for kind in kinds:
             changes.append({"id": view.id, "kind": kind})
     return changes
+
+
+def format_utc_z(moment: datetime) -> str:
+    return moment.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def apply_state_change(record: dict, new_state_id: int, now: datetime) -> None:
+    record["stateId"] = new_state_id
+    record["state"] = STATE_NAMES[new_state_id]
+    record["stateEnum"] = STATE_ENUMS[new_state_id]
+    if new_state_id in RESOLVED_STATES or new_state_id == RESEARCH_STATE:
+        record["completionDate"] = format_utc_z(now)
+    else:
+        record["completionDate"] = None
+
+
+def transition_denied_reason(current_state_id: int, new_state_id: int) -> str:
+    if current_state_id == 10:
+        return "Закрытый инцидент нельзя вернуть в работу — по процессу создаётся новый инцидент."
+    current_label = STATE_NAMES.get(current_state_id, f"неизвестный статус {current_state_id}")
+    new_label = STATE_NAMES.get(new_state_id, f"статус {new_state_id}")
+    allowed_ids = TRANSITIONS.get(current_state_id, frozenset())
+    if allowed_ids:
+        allowed = ", ".join(STATE_NAMES[s] for s in sorted(allowed_ids))
+        return (
+            f"Переход из статуса «{current_label}» в «{new_label}» не разрешён. "
+            f"Допустимые переходы: {allowed}."
+        )
+    return f"Переход из статуса «{current_label}» в «{new_label}» не разрешён. Допустимых переходов нет."
 
 
 def pluralize(count: int, one: str, few: str, many: str) -> str:
