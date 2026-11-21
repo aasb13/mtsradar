@@ -146,9 +146,9 @@
   {
     "sysId": "179420538902348830",
     "id": "INC000021933233",
-    "state": "Назначен",
-    "stateEnum": "Assigned",
-    "stateId": 0,
+    "state": "Выполняется",
+    "stateEnum": "WorkInProgress",
+    "stateId": 2,
     "stateReason": "Внешняя обработка",
     "stateReasonId": "10",
     "submitDate": "2026-11-09T06:23:09Z",
@@ -189,7 +189,8 @@
     "eliminationType": null,
     "eliminationTypeId": null,
     "receivingChannel": "Анонимное письмо",
-    "solution": "Запасной Шифр-замок установлен, система работает штатно."
+    "solution": "Запасной Шифр-замок установлен, система работает штатно.",
+    "stageId": 4
   },
   {
     "sysId": "179420585202344346",
@@ -290,9 +291,9 @@
   {
     "sysId": "179422570100140097",
     "id": "INC000021935528",
-    "state": "Назначен",
-    "stateEnum": "Assigned",
-    "stateId": 0,
+    "state": "Выполняется",
+    "stateEnum": "WorkInProgress",
+    "stateId": 2,
     "stateReason": "Внешняя обработка",
     "stateReasonId": "10",
     "submitDate": "2026-11-09T12:01:41Z",
@@ -333,7 +334,8 @@
     "eliminationType": null,
     "eliminationTypeId": null,
     "receivingChannel": "Мониторинг 9го королевства",
-    "solution": "Отрегулирован Стекло, инцидент закрыт."
+    "solution": "Отрегулирован Стекло, инцидент закрыт.",
+    "stageId": 4
   },
   {
     "sysId": "179424314807105088",
