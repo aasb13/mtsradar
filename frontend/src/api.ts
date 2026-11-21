@@ -21,37 +21,56 @@ import type {
 const ACCESS_KEY = 'radar-access-token'
 const REFRESH_KEY = 'radar-refresh-token'
 
-export function getAccessToken(): string | null {
+/** «Запомнить меня»: галочка — localStorage (живёт между запусками браузера), без неё — sessionStorage (до закрытия вкладки). */
+function tokenStores(): Storage[] {
+  const stores: Storage[] = []
   try {
-    return window.localStorage.getItem(ACCESS_KEY)
-  } catch {
-    return null
+    stores.push(window.localStorage)
+  } catch (err) {
+    console.error('localStorage недоступен', err)
   }
+  try {
+    stores.push(window.sessionStorage)
+  } catch (err) {
+    console.error('sessionStorage недоступен', err)
+  }
+  return stores
+}
+
+export function getAccessToken(): string | null {
+  for (const store of tokenStores()) {
+    const value = store.getItem(ACCESS_KEY)
+    if (value !== null) return value
+  }
+  return null
 }
 
 export function getRefreshToken(): string | null {
-  try {
-    return window.localStorage.getItem(REFRESH_KEY)
-  } catch {
-    return null
+  for (const store of tokenStores()) {
+    const value = store.getItem(REFRESH_KEY)
+    if (value !== null) return value
   }
+  return null
 }
 
-export function storeTokens(access: string, refresh: string): void {
+export function storeTokens(access: string, refresh: string, persist = true): void {
+  const store = persist ? window.localStorage : window.sessionStorage
   try {
-    window.localStorage.setItem(ACCESS_KEY, access)
-    window.localStorage.setItem(REFRESH_KEY, refresh)
+    store.setItem(ACCESS_KEY, access)
+    store.setItem(REFRESH_KEY, refresh)
   } catch (err) {
     console.error('Не удалось сохранить токены', err)
   }
 }
 
 export function clearTokens(): void {
-  try {
-    window.localStorage.removeItem(ACCESS_KEY)
-    window.localStorage.removeItem(REFRESH_KEY)
-  } catch (err) {
-    console.error('Не удалось удалить токены', err)
+  for (const store of tokenStores()) {
+    try {
+      store.removeItem(ACCESS_KEY)
+      store.removeItem(REFRESH_KEY)
+    } catch (err) {
+      console.error('Не удалось удалить токены', err)
+    }
   }
 }
 

@@ -55,6 +55,7 @@ export function LoginPage() {
   const { state, login } = useApp()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [remember, setRemember] = useState(true)
   const error = state.authError
 
   return (
@@ -70,7 +71,7 @@ export function LoginPage() {
       <form
         onSubmit={e => {
           e.preventDefault()
-          void login(email, password)
+          void login(email, password, remember)
         }}
       >
         <label className="field">
@@ -100,14 +101,21 @@ export function LoginPage() {
           <span className="field__hint">Минимум 8 символов</span>
         </label>
         <div className="auth__row">
-          <span className="remember">
-            <span className="checkbox--red checkbox--on">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="m5 12.5 4.5 4.5L19 7.5" />
-              </svg>
+          <button
+            type="button"
+            className="remember"
+            onClick={() => setRemember(!remember)}
+            aria-pressed={remember}
+          >
+            <span className={`checkbox--red ${remember ? 'checkbox--on' : ''}`}>
+              {remember && (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="m5 12.5 4.5 4.5L19 7.5" />
+                </svg>
+              )}
             </span>
             Запомнить меня
-          </span>
+          </button>
           <a className="auth__link" href="#/login" onClick={e => e.preventDefault()}>
             Забыли пароль?
           </a>

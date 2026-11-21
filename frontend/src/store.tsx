@@ -255,7 +255,7 @@ function cardFrom(value: unknown): Card | null {
 interface AppContextValue {
   state: State
   dispatch: Dispatch<Action>
-  login: (email: string, password: string) => Promise<void>
+  login: (email: string, password: string, remember?: boolean) => Promise<void>
   logout: () => Promise<void>
   registerPending: (email: string, fullName: string) => void
   pendingUsers: () => { email: string; fullName: string; requestedAt: string }[]
@@ -518,11 +518,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [state.now, state.freeze, showToast])
 
   const login = useCallback(
-    async (email: string, password: string) => {
+    async (email: string, password: string, remember = true) => {
       dispatch({ type: 'AUTH_START' })
       try {
         const pair = await api.login(email, password)
-        storeTokens(pair.accessToken, pair.refreshToken)
+        storeTokens(pair.accessToken, pair.refreshToken, remember)
         await boot(pair.user)
         navigate(pair.user.role === 'developer' ? '/dev' : pair.user.role === 'viewer' ? '/qa' : '/')
       } catch (err) {
