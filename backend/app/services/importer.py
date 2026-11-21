@@ -52,6 +52,17 @@ def _short_error(e: ValidationError) -> str:
     return "; ".join(f"{'.'.join(map(str, err['loc']))}: {err['msg']}" for err in e.errors()[:5])
 
 
+def looks_like_incident_dump(payload: Any) -> bool:
+    """Выгрузка инцидентов, а не соседний справочник (incidents_attributes.json) или другой json."""
+    try:
+        records = extract_records(payload)
+    except ImportFormatError:
+        return False
+    return bool(records) and all(
+        isinstance(r, dict) and isinstance(r.get("id"), str) and "stateId" in r for r in records
+    )
+
+
 async def import_records(
     records: list[Any],
     *,
@@ -159,8 +170,12 @@ def _summary(report: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def import_file(path: Path, *, force: bool = False) -> dict[str, Any] | None:
-    """Импорт файла с данными. Возвращает отчёт или None, если файл не менялся/битый."""
+async def import_file(path: Path, *, force: bool = False, mode: Mode = "snapshot") -> dict[str, Any] | None:
+    """Импорт файла с данными. Возвращает отчёт или None, если файл не менялся/битый/не выгрузка.
+
+    mode: snapshot — пропавшие из файла записи архивируются (основной файл выгрузки);
+          upsert — применяются только записи из файла, остальное не трогается (прочие json рядом).
+    """
     try:
         raw_bytes = await asyncio.to_thread(path.read_bytes)  # не блокируем event loop
     except FileNotFoundError:
@@ -168,16 +183,21 @@ async def import_file(path: Path, *, force: bool = False) -> dict[str, Any] | No
         return None
     file_hash = hashlib.sha256(raw_bytes).hexdigest()
     r = get_redis()
-    if not force and await r.get("import:last_hash") == file_hash:
+    if not force and await r.get(f"import:last_hash:{path.name}") == file_hash:
         return None
     try:
-        records = extract_records(json.loads(raw_bytes.decode("utf-8-sig")))
-    except (json.JSONDecodeError, UnicodeDecodeError, ImportFormatError) as e:
+        payload = json.loads(raw_bytes.decode("utf-8-sig"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
         # типично для живой правки: файл сохранён не до конца или с опечаткой
         await rabbit.publish("import.failed", {"source": "file", "path": path.name, "error": str(e)})
         log.warning("data file is invalid", extra={"extra_data": {"error": str(e)}})
         return None
+    if not looks_like_incident_dump(payload):
+        log.info("not an incident dump, skipped", extra={"extra_data": {"file": path.name}})
+        return None
     silent = await get_db().incidents.estimated_document_count() == 0
-    report = await import_records(records, mode="snapshot", source="file", file_hash=file_hash, silent=silent)
-    await r.set("import:last_hash", file_hash)
+    report = await import_records(
+        records=extract_records(payload), mode=mode, source="file", file_hash=file_hash, silent=silent
+    )
+    await r.set(f"import:last_hash:{path.name}", file_hash)
     return report

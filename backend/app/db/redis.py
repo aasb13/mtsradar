@@ -3,7 +3,7 @@
 refresh:{jti}            -> user_id   белый список refresh-токенов (logout = удаление ключа)
 rl:login:{ip}            -> счётчик   ограничение попыток входа
 lock:import              -> lock      импорт файла выполняется строго по одному
-import:last_hash         -> sha256    не импортировать один и тот же файл дважды
+import:last_hash:{файл}  -> sha256    не импортировать один и тот же файл дважды
 evt:seen:{consumer}:{id} -> 1         идемпотентность потребителей RabbitMQ (at-least-once)
 sla:notified:{...}       -> 1         SLA-оповещение по инциденту отправляется один раз
 """

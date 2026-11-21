@@ -54,7 +54,11 @@ async def main() -> None:
     if s.watch_data_file:
         # стартовая загрузка («точка начала») — ДО контроля сроков, иначе он стартует на пустой базе.
         # Повторный запуск идемпотентен: неизменившиеся инциденты не трогаются.
-        await import_file(s.data_file.resolve(), force=True)
+        primary = s.data_file.resolve()
+        await import_file(primary, force=True)
+        for extra in sorted(primary.parent.glob("*.json")):
+            if extra != primary:
+                await import_file(extra, force=True, mode="upsert")
     tasks = [asyncio.create_task(sla_monitor.run(stop), name="sla")]
     if s.watch_data_file:
         tasks.append(asyncio.create_task(watch_data_file(stop), name="watcher"))
