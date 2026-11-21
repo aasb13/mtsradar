@@ -1,0 +1,476 @@
+import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from 'react'
+import { useEffect, useRef } from 'react'
+import { initials, liveSla, priorityMeta } from './format'
+import type { Card } from './types'
+
+// ---------------- кнопки ----------------
+
+export function Button({
+  variant = 'secondary',
+  className = '',
+  children,
+  ...rest
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'ghost' | 'violet' | 'danger' | 'danger-light' | 'freeze' }) {
+  return (
+    <button type="button" className={`btn btn--${variant} ${className}`} {...rest}>
+      {children}
+    </button>
+  )
+}
+
+// ---------------- бейджи приоритета ----------------
+
+export function SeverityBadge({ priorityId }: { priorityId: number }) {
+  const meta = priorityMeta(priorityId)
+  return (
+    <span className={`sev sev--${meta.tone}`}>
+      <span className="sev__dot" />
+      {meta.label}
+    </span>
+  )
+}
+
+// ---------------- пилюли статуса ----------------
+
+const PILL_TEXT: Record<number, string> = {
+  0: 'К выполнению',
+  2: 'В работе',
+  7: 'На проверке',
+  10: 'Закрыт',
+  20: 'Исследование',
+}
+
+export function StatusPill({ stateId, className = '' }: { stateId: number; className?: string }) {
+  const tone = stateId === 0 || stateId === 20 ? 'todo' : stateId === 2 ? 'work' : stateId === 7 ? 'review' : 'done'
+  return (
+    <span className={`pill pill--${tone} ${className}`}>
+      <span className="pill__dot" />
+      {PILL_TEXT[stateId] ?? `Статус ${stateId}`}
+    </span>
+  )
+}
+
+// ---------------- SLA-чип ----------------
+
+export function SlaChip({ card, now, frozen }: { card: Card; now: number; frozen?: boolean }) {
+  const sla = liveSla(card, now)
+  if (frozen) {
+    return (
+      <span className="slachip slachip--frozen">
+        <SnowflakeIcon />
+        Пауза
+      </span>
+    )
+  }
+  const tone =
+    sla.state === 'breach'
+      ? 'breach'
+      : sla.state === 'danger'
+        ? 'breach'
+        : sla.state === 'warning'
+          ? 'warn'
+          : sla.state === 'resolved'
+            ? 'done'
+            : sla.state === 'none'
+              ? 'none'
+              : 'ok'
+  const icon = sla.state === 'breach' ? <AlertIcon /> : sla.state === 'resolved' ? <CheckCircleIcon /> : <ClockIcon />
+  return (
+    <span className={`slachip slachip--${tone}`}>
+      {icon}
+      {sla.label}
+    </span>
+  )
+}
+
+// ---------------- аватар ----------------
+
+export function Avatar({ name, size = 'md', tone = 'blue' }: { name?: string | null | undefined; size?: 'sm' | 'md' | 'lg'; tone?: 'blue' | 'violet' | 'ghost' }) {
+  if (tone === 'ghost') {
+    return (
+      <span className={`avatar avatar--${size} avatar--ghost`}>
+        <UserIcon />
+      </span>
+    )
+  }
+  return <span className={`avatar avatar--${size} avatar--${tone}`}>{initials(name)}</span>
+}
+
+// ---------------- поля формы ----------------
+
+export function Field({ label, hint, error, children }: { label: string; hint?: string; error?: string | null; children: ReactNode }) {
+  return (
+    <label className="field">
+      <span className="field__label">{label}</span>
+      {children}
+      {error !== null && error !== undefined && <span className="field__error">{error}</span>}
+      {error === null && hint !== undefined && <span className="field__hint">{hint}</span>}
+    </label>
+  )
+}
+
+export function Input({ className = '', ...rest }: InputHTMLAttributes<HTMLInputElement>) {
+  return <input className={`input ${className}`} {...rest} />
+}
+
+export function Textarea({ className = '', ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return <textarea className={`input input--area ${className}`} {...rest} />
+}
+
+export function Select({ className = '', children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <span className={`select ${className}`}>
+      <select {...rest}>{children}</select>
+      <ChevronDownIcon />
+    </span>
+  )
+}
+
+// ---------------- модальное окно ----------------
+
+export function Modal({
+  title,
+  subtitle,
+  onClose,
+  children,
+  footer,
+  width = 720,
+}: {
+  title: ReactNode
+  subtitle?: ReactNode
+  onClose: () => void
+  children: ReactNode
+  footer?: ReactNode
+  width?: number
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div className="overlay overlay--center" onMouseDown={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: width }} ref={ref}>
+        <div className="modal__head">
+          <div>
+            <h2 className="modal__title">{title}</h2>
+            {subtitle !== undefined && <p className="modal__subtitle">{subtitle}</p>}
+          </div>
+          <button type="button" className="iconbtn" aria-label="Закрыть" onClick={onClose}>
+            <CloseIcon />
+          </button>
+        </div>
+        <div className="modal__body">{children}</div>
+        {footer !== undefined && <div className="modal__foot">{footer}</div>}
+      </div>
+    </div>
+  )
+}
+
+// ---------------- фильтр-чип ----------------
+
+export function FilterChip({ label, value, active = false, children }: { label: string; value: string; active?: boolean; children: ReactNode }) {
+  return (
+    <span className={`fchip ${active ? 'fchip--active' : ''}`}>
+      <span className="fchip__label">{label}</span>
+      <span className="fchip__value">{value}</span>
+      <ChevronDownIcon />
+      {children}
+    </span>
+  )
+}
+
+// ---------------- вкладки ----------------
+
+export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { key: T; label: ReactNode }[]; value: T; onChange: (key: T) => void }) {
+  return (
+    <div className="tabs">
+      {tabs.map(tab => (
+        <button key={tab.key} type="button" className={`tabs__tab ${tab.key === value ? 'tabs__tab--active' : ''}`} onClick={() => onChange(tab.key)}>
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// ---------------- пустое состояние ----------------
+
+export function EmptyState({ title, note }: { title: string; note?: string }) {
+  return (
+    <div className="empty">
+      <span className="empty__icon">
+        <InboxIcon />
+      </span>
+      <p className="empty__title">{title}</p>
+      {note !== undefined && <p className="empty__note">{note}</p>}
+    </div>
+  )
+}
+
+// ---------------- иконки (Lucide-стиль, stroke 1.5) ----------------
+
+interface IconProps {
+  size?: number
+}
+
+function svg(size: number | undefined, children: ReactNode) {
+  return (
+    <svg width={size ?? 16} height={size ?? 16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {children}
+    </svg>
+  )
+}
+
+export function SearchIcon({ size }: IconProps) {
+  return svg(size, (
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.2-3.2" />
+    </>
+  ))
+}
+
+export function BellIcon({ size }: IconProps) {
+  return svg(size, (
+    <>
+      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+      <path d="M10.3 21a1.9 1.9 0 0 0 3.4 0" />
+    </>
+  ))
+}
+
+export function StatsIcon({ size }: IconProps) {
+  return svg(size, (
+    <>
+      <path d="M3 3v18h18" />
+      <path d="M7 15v-4M12 15V7M17 15v-6" />
+    </>
+  ))
+}
+
+export function UserIcon({ size }: IconProps) {
+  return svg(size, (
+    <>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M5 21c0-4 3-6 7-6s7 2 7 6" />
+    </>
+  ))
+}
+
+export function UsersIcon({ size }: IconProps) {
+  return svg(size, (
+    <>
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M3 20c0-3.5 2.7-5.5 6-5.5s6 2 6 5.5" />
+      <circle cx="17" cy="9" r="3" />
+      <path d="M16.5 14.5c2.8.3 4.5 2 4.5 4.5" />
+    </>
+  ))
+}
+
+export function ClockIcon({ size }: IconProps) {
+  return svg(size, (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </>
+  ))
+}
+
+export function CheckCircleIcon({ size }: IconProps) {
+  return svg(size, (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8.5 12 2.5 2.5 4.5-5" />
+    </>
+  ))
+}
+
+export function CheckIcon({ size }: IconProps) {
+  return svg(size, <path d="m5 12.5 4.5 4.5L19 7.5" />)
+}
+
+export function AlertIcon({ size }: IconProps) {
+  return svg(size, (
+    <>
+      <path d="M12 3 2.5 20h19L12 3Z" />
+      <path d="M12 10v4M12 17.2v.1" />
+    </>
+  ))
+}
+
+export function CloseIcon({ size }: IconProps) {
+  return svg(size, <path d="M6 6l12 12M18 6 6 18" />)
+}
+
+export function ChevronDownIcon({ size }: IconProps) {
+  return svg(size, <path d="m6 9 6 6 6-6" />)
+}
+
+export function EyeIcon({ size }: IconProps) {
+  return svg(size, (
+    <>
+      <path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z" />
+      <circle cx="12" cy="12" r="2.8" />
+    </>
+  ))
+}
+
+export function LinkIcon({ size }: IconProps) {
+  return svg(size, (
+    <>
+      <path d="M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1.5 1.5" />
+      <path d="M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6L12.5 17.5" />
+    </>
+  ))
+}
+
+export function SnowflakeIcon({ size }: IconProps) {
+  return svg(size, (
+    <>
+      <path d="M12 2v20M4.5 6.5l15 11M19.5 6.5l-15 11" />
+      <path d="M12 5.5 10 4M12 5.5 14 4M12 18.5l-2 1.5M12 18.5l2 1.5M6 10 4.5 8M6 10l-2.2.5M18 14l2.2-.5M18 14l-1.5 2M18 10l1.5-2M18 10l2.2.5M6 14l-2.2-.5M6 14l1.5 2" />
+    </>
+  ))
+}
+
+export function SparkIcon({ size }: IconProps) {
+  return svg(size, (
+    <>
+      <path d="M12 3l1.8 4.9L19 9.7l-5.2 1.8L12 16.4l-1.8-4.9L5 9.7l5.2-1.8L12 3Z" />
+      <path d="M19 15.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9.9-2.1Z" />
+    </>
+  ))
+}
+
+export function RefreshIcon({ size }: IconProps) {
+  return svg(size, (
+    <>
+      <path d="M21 12a9 9 0 1 1-2.6-6.4" />
+      <path d="M21 3v6h-6" />
+    </>
+  ))
+}
+
+export function InboxIcon({ size }: IconProps) {
+  return svg(size, (
+    <>
+      <path d="M3 13h5l2 3h4l2-3h5" />
+      <path d="M5 5h14l2 8v6H3v-6l2-8Z" />
+    </>
+  ))
+}
+
+export function UploadIcon({ size }: IconProps) {
+  return svg(size, (
+    <>
+      <path d="M12 16V4" />
+      <path d="m7 9 5-5 5 5" />
+      <path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+    </>
+  ))
+}
+
+export function DownloadIcon({ size }: IconProps) {
+  return svg(size, (
+    <>
+      <path d="M12 4v12" />
+      <path d="m7 11 5 5 5-5" />
+      <path d="M4 20h16" />
+    </>
+  ))
+}
+
+export function FileIcon({ size }: IconProps) {
+  return svg(size, (
+    <>
+      <path d="M6 3h8l4 4v14H6V3Z" />
+      <path d="M14 3v4h4" />
+    </>
+  ))
+}
+
+export function TrashIcon({ size }: IconProps) {
+  return svg(size, (
+    <>
+      <path d="M4 7h16" />
+      <path d="M9 7V5h6v2" />
+      <path d="M6 7l1 13h10l1-13" />
+    </>
+  ))
+}
+
+export function PlusIcon({ size }: IconProps) {
+  return svg(size, <path d="M12 5v14M5 12h14" />)
+}
+
+export function DotsIcon({ size }: IconProps) {
+  return svg(size, (
+    <>
+      <circle cx="5" cy="12" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="19" cy="12" r="1.2" fill="currentColor" stroke="none" />
+    </>
+  ))
+}
+
+export function SendIcon({ size }: IconProps) {
+  return svg(size, <path d="M21 3 10.5 13.5M21 3l-7 18-3.5-7.5L3 10l18-7Z" />)
+}
+
+export function UndoIcon({ size }: IconProps) {
+  return svg(size, (
+    <>
+      <path d="M8 5H14a6 6 0 1 1 0 12H6" />
+      <path d="m10 3-4 2 4 2" transform="translate(0 2)" />
+    </>
+  ))
+}
+
+export function LogoutIcon({ size }: IconProps) {
+  return svg(size, (
+    <>
+      <path d="M14 4h5v16h-5" />
+      <path d="M10 8l-4 4 4 4M6 12h11" />
+    </>
+  ))
+}
+
+export function CommentIcon({ size }: IconProps) {
+  return svg(size, <path d="M4 5h16v11H9l-5 4V5Z" />)
+}
+
+export function TeamIcon({ size }: IconProps) {
+  return svg(size, (
+    <>
+      <circle cx="12" cy="7" r="3.5" />
+      <path d="M5 21c0-3.8 3-6 7-6s7 2.2 7 6" />
+    </>
+  ))
+}
+
+export function BoxIcon({ size }: IconProps) {
+  return svg(size, (
+    <>
+      <path d="M12 3 4 7v10l8 4 8-4V7l-8-4Z" />
+      <path d="M4 7l8 4 8-4M12 11v10" />
+    </>
+  ))
+}
+
+export function StarIcon({ size }: IconProps) {
+  return svg(size, <path d="m12 4 2.2 4.9 5.3.6-3.9 3.6 1 5.2L12 15.6l-4.6 2.7 1-5.2L4.5 9.5l5.3-.6L12 4Z" />)
+}
+
+export function MailIcon({ size }: IconProps) {
+  return svg(size, (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="m3 7 9 6 9-6" />
+    </>
+  ))
+}

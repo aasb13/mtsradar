@@ -1,4 +1,4 @@
-import type { ChangeKind, Incident, IncidentGroup, SlaState, ToastType } from './types'
+import type { Card, Sla } from './types'
 
 const shortDateFmt = new Intl.DateTimeFormat('ru-RU', {
   day: '2-digit',
@@ -7,35 +7,36 @@ const shortDateFmt = new Intl.DateTimeFormat('ru-RU', {
   minute: '2-digit',
 })
 
-const fullDateFmt = new Intl.DateTimeFormat('ru-RU', {
-  day: '2-digit',
-  month: '2-digit',
-  year: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit',
-})
+const dayMonthFmt = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' })
 
-function safeParse(iso: string | null): number | null {
-  if (iso === null || iso === '') return null
+const weekdayDateFmt = new Intl.DateTimeFormat('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })
+
+function safeParse(iso: string | null | undefined): number | null {
+  if (iso === null || iso === undefined || iso === '') return null
   const t = Date.parse(iso)
   return Number.isNaN(t) ? null : t
 }
 
-export function formatShort(iso: string | null): string {
+export function formatShort(iso: string | null | undefined): string {
   const t = safeParse(iso)
   return t === null ? '—' : shortDateFmt.format(t)
 }
 
-export function formatFull(iso: string | null): string {
+export function formatDayMonth(iso: string | null | undefined): string {
   const t = safeParse(iso)
-  return t === null ? '—' : fullDateFmt.format(t)
+  return t === null ? '—' : dayMonthFmt.format(t)
+}
+
+export function todayWeekday(now: number): string {
+  const s = weekdayDateFmt.format(now)
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0')
 }
 
-/** «2д 04:11:33» — дни показываются только когда есть; под сутками h:mm:ss. */
+/** «2д 04:11:33» — дни показываются только когда есть. */
 export function formatTimeLeft(totalSeconds: number): string {
   const s = Math.max(0, Math.floor(totalSeconds))
   const days = Math.floor(s / 86400)
@@ -46,65 +47,72 @@ export function formatTimeLeft(totalSeconds: number): string {
   return `${pad2(h)}:${pad2(m)}:${pad2(sec)}`
 }
 
-/** Просрочка: «2д 04:11» при сутках, «04:11:33» под сутками. */
+/** Просрочка: «2д 04:11» при сутках, «04:11» под сутками. */
 export function formatOverdue(totalSeconds: number): string {
   const s = Math.max(0, Math.floor(totalSeconds))
   const days = Math.floor(s / 86400)
   const h = Math.floor((s % 86400) / 3600)
   const m = Math.floor((s % 3600) / 60)
-  const sec = s % 60
   if (days > 0) return `${days}д ${pad2(h)}:${pad2(m)}`
-  return `${pad2(h)}:${pad2(m)}:${pad2(sec)}`
+  return `${pad2(h)}:${pad2(m)}`
 }
 
 /** Слова: «1д 3ч», «1ч 19м», «45м», «менее минуты». */
-export function formatDurationWords(totalSeconds: number): string {
+export function formatDurationWords(totalSeconds: number | null): string {
+  if (totalSeconds === null) return '—'
   const s = Math.max(0, Math.floor(totalSeconds))
   if (s < 60) return 'менее минуты'
   const days = Math.floor(s / 86400)
   const h = Math.floor((s % 86400) / 3600)
   const m = Math.floor((s % 3600) / 60)
   if (days > 0) return h > 0 ? `${days}д ${h}ч` : `${days}д`
-  if (h > 0) return `${h}ч ${m}м`
-  return `${m}м`
+  if (h > 0) return h > 0 && m > 0 ? `${h} ч ${m} мин` : `${h} ч`
+  return `${m} мин`
 }
 
-export function relativeTime(ts: number, now: number): string {
-  const diff = Math.max(0, Math.floor((now - ts) / 1000))
+export function formatMinutes(minutes: number | null): string {
+  if (minutes === null) return '—'
+  if (minutes < 1) return `${Math.round(minutes * 60)} с`
+  return formatDurationWords(Math.round(minutes * 60))
+}
+
+/** «только что» / «5 мин назад» / «2 ч назад» / дата. */
+export function relativeTime(iso: string | null | undefined, now: number): string {
+  const t = safeParse(iso)
+  if (t === null) return '—'
+  const diff = Math.max(0, Math.floor((now - t) / 1000))
   if (diff < 60) return 'только что'
   if (diff < 3600) return `${Math.floor(diff / 60)} мин назад`
   if (diff < 86400) return `${Math.floor(diff / 3600)} ч назад`
-  return shortDateFmt.format(ts)
+  return shortDateFmt.format(t)
 }
 
-export function durationBetween(fromIso: string | null, toIso: string | null): number | null {
-  const from = safeParse(fromIso)
-  const to = safeParse(toIso)
-  if (from === null || to === null) return null
-  return Math.max(0, (to - from) / 1000)
-}
-
+/**
+ * Живой SLA: значения от бэкенда фиксируются в updatedAt карточки
+ * (каждое WS-обновление приносит свежую карточку), дальше секунды
+ * тикают локально между обновлениями. Замороженные инциденты
+ * показывают время, зафиксированное на момент заморозки.
+ */
 export interface LiveSla {
-  state: SlaState
+  state: 'ok' | 'warning' | 'danger' | 'breach' | 'none' | 'resolved'
   label: string
   breached: boolean
 }
 
-/**
- * Пересчитывает SLA на «живых» часах: значения от бэкенда фиксируются
- * в момент snapshot/update (syncedAt), дальше таймстамп идёт локально.
- */
-export function liveSla(incident: Incident, syncedAt: number | null, now: number): LiveSla {
-  const sla = incident.sla
-  const elapsed = syncedAt === null ? 0 : Math.max(0, (now - syncedAt) / 1000)
+export function liveSla(card: Card, now: number): LiveSla {
+  const sla = card.sla
+  const anchor = safeParse(card.updatedAt)
+  const elapsed = anchor === null ? 0 : Math.max(0, (now - anchor) / 1000)
   switch (sla.state) {
-    case 'done': {
-      const secs = durationBetween(incident.submitDate, incident.completionDate)
-      return { state: 'done', label: secs === null ? 'Решено' : `Решено за ${formatDurationWords(secs)}`, breached: false }
+    case 'resolved': {
+      const from = safeParse(card.submitDate)
+      const to = safeParse(card.completionDate)
+      if (from === null || to === null) return { state: 'resolved', label: 'Решено', breached: false }
+      return { state: 'resolved', label: `Решён за ${formatDurationWords((to - from) / 1000)}`, breached: false }
     }
     case 'none':
       return { state: 'none', label: 'Срок не задан', breached: false }
-    case 'breach': {
+    case 'breached': {
       const overdue = (sla.overdueSeconds ?? 0) + elapsed
       return { state: 'breach', label: `Просрочен на ${formatOverdue(overdue)}`, breached: true }
     }
@@ -114,155 +122,131 @@ export function liveSla(incident: Incident, syncedAt: number | null, now: number
       if (sla.timeLeftSeconds === null) return { state: 'none', label: 'Срок не задан', breached: false }
       const left = sla.timeLeftSeconds - elapsed
       if (left < 0) return { state: 'breach', label: `Просрочен на ${formatOverdue(-left)}`, breached: true }
-      return { state: sla.state, label: `Осталось ${formatTimeLeft(left)}`, breached: false }
+      return { state: sla.state, label: `${formatTimeLeft(left)} осталось`, breached: false }
     }
   }
 }
 
-export const SLA_RANK: Record<SlaState, number> = {
-  breach: 0,
+/** Крупное значение для SLA-блока панели: остаток, просрочка или факт решения. */
+export function slaBigValue(card: Card, now: number): string {
+  const sla = liveSla(card, now)
+  const anchor = safeParse(card.updatedAt)
+  const elapsed = anchor === null ? 0 : Math.max(0, (now - anchor) / 1000)
+  switch (sla.state) {
+    case 'breach':
+      return formatOverdue((card.sla.overdueSeconds ?? 0) + elapsed)
+    case 'ok':
+    case 'warning':
+    case 'danger':
+      return formatTimeLeft(Math.max(0, (card.sla.timeLeftSeconds ?? 0) - elapsed))
+    case 'resolved': {
+      const from = safeParse(card.submitDate)
+      const to = safeParse(card.completionDate)
+      if (from === null || to === null) return '—'
+      return formatDurationWords((to - from) / 1000)
+    }
+    default:
+      return '—'
+  }
+}
+
+/** «1 координатор, 2 координатора, 5 координаторов». */
+export function pluralize(count: number, one: string, few: string, many: string): string {
+  const mod10 = count % 10
+  const mod100 = count % 100
+  if (mod10 === 1 && mod100 !== 11) return one
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few
+  return many
+}
+
+const SLA_RANK: Record<Sla['state'], number> = {
+  breached: 0,
   danger: 1,
   warning: 2,
   ok: 3,
   none: 4,
-  done: 5,
-}
-
-function deadlineValue(incident: Incident): number {
-  const t = safeParse(incident.deadline)
-  return t === null ? Number.POSITIVE_INFINITY : t
-}
-
-function submitValue(incident: Incident): number {
-  const t = safeParse(incident.submitDate)
-  return t === null ? 0 : t
+  resolved: 5,
 }
 
 /** Сначала просроченные и горящие, решённые — в конец. */
-export function compareIncidents(a: Incident, b: Incident, syncedAt: number | null, now: number): number {
-  const ra = SLA_RANK[liveSla(a, syncedAt, now).state]
-  const rb = SLA_RANK[liveSla(b, syncedAt, now).state]
+export function compareCards(a: Card, b: Card): number {
+  const ra = SLA_RANK[a.sla.state]
+  const rb = SLA_RANK[b.sla.state]
   if (ra !== rb) return ra - rb
-  if (ra <= SLA_RANK.ok) {
-    const da = deadlineValue(a)
-    const db = deadlineValue(b)
-    if (da !== db) return da - db
+  if (a.isCritical !== b.isCritical) return a.isCritical ? -1 : 1
+  const da = safeParse(a.deadline) ?? Number.POSITIVE_INFINITY
+  const db = safeParse(b.deadline) ?? Number.POSITIVE_INFINITY
+  if (da !== db) return da - db
+  return (safeParse(b.submitDate) ?? 0) - (safeParse(a.submitDate) ?? 0)
+}
+
+export function priorityMeta(priorityId: number): { label: string; tone: 'critical' | 'high' | 'medium' | 'low' } {
+  switch (priorityId) {
+    case 4:
+      return { label: 'Критический', tone: 'critical' }
+    case 3:
+      return { label: 'Высокий', tone: 'high' }
+    case 2:
+      return { label: 'Средний', tone: 'medium' }
+    default:
+      return { label: 'Низкий', tone: 'low' }
   }
-  return submitValue(b) - submitValue(a)
 }
 
-const STATUS_FALLBACK: Record<number, string> = {
-  0: 'Назначен',
-  2: 'Выполняется',
-  7: 'Завершён',
-  10: 'Закрыт',
-  20: 'Исследование ситуации',
+/** Колонки «Групп внимания» = уровни приоритета (кейс: группы 4→1). */
+export function levelTitle(priorityId: number): string {
+  return `${priorityId} уровень`
 }
 
-export function statusLabel(incident: Incident): string {
-  if (typeof incident.state === 'string' && incident.state.trim() !== '') return incident.state
-  return STATUS_FALLBACK[incident.stateId] ?? `Статус ${incident.stateId}`
-}
-
-export function statusClass(stateId: number): string {
+export function statusPillTone(stateId: number): 'todo' | 'work' | 'review' | 'done' | 'frozen' | 'breach' {
   switch (stateId) {
     case 0:
-      return 'st-assigned'
-    case 2:
-      return 'st-wip'
-    case 7:
-      return 'st-resolved'
-    case 10:
-      return 'st-closed'
     case 20:
-      return 'st-research'
-    default:
-      return 'st-unknown'
-  }
-}
-
-export interface StageMeta {
-  id: number
-  label: string
-  cls: string
-}
-
-/** Колонки канбан-доски; зеркало карты бэкенда (app/incidents.py STAGE_STATE_IDS). */
-export const STAGES: readonly StageMeta[] = [
-  { id: 1, label: 'Ожидает координатора', cls: 'st-assigned' },
-  { id: 2, label: 'Ожидает прикрепления команды', cls: 'st-assigned' },
-  { id: 3, label: 'Ожидает решения инцидента', cls: 'st-assigned' },
-  { id: 4, label: 'В процессе решения', cls: 'st-wip' },
-  { id: 5, label: 'QA', cls: 'st-resolved' },
-  { id: 6, label: 'Ожидает разбора (причины)', cls: 'st-research' },
-  { id: 7, label: 'Инцидент полностью завершен', cls: 'st-closed' },
-]
-
-export const FINAL_STAGE = 7
-
-export function stageName(stageId: number): string {
-  return STAGES.find(stage => stage.id === stageId)?.label ?? `Колонка ${stageId}`
-}
-
-export function priorityMeta(priorityId: number): { label: string; cls: string } {
-  switch (priorityId) {
-    case 3:
-      return { label: 'Высокий', cls: 'prio-high' }
+      return 'todo'
     case 2:
-      return { label: 'Средний', cls: 'prio-medium' }
-    case 1:
-      return { label: 'Низкий', cls: 'prio-low' }
+      return 'work'
+    case 7:
+      return 'review'
+    case 10:
+      return 'done'
     default:
-      return { label: `Приоритет ${priorityId}`, cls: 'prio-low' }
+      return 'todo'
   }
 }
 
-export const GROUP_META: Record<IncidentGroup, { label: string; cls: string }> = {
-  critical: { label: 'Критический', cls: 'tag-critical' },
-  coordinators: { label: 'У координаторов', cls: 'tag-coordinators' },
-  high_priority: { label: 'Высокий приоритет', cls: 'tag-high' },
-  research: { label: 'Исследование', cls: 'tag-research' },
+export const STATE_PILL_TEXT: Record<number, string> = {
+  0: 'К выполнению',
+  2: 'В работе',
+  7: 'На проверке',
+  10: 'Закрыт',
+  20: 'Исследование',
 }
 
-export const FEED_TEXT: Record<ChangeKind, string> = {
-  critical_new: 'стал критическим',
-  deadline_changed: 'изменён срок',
-  priority_changed: 'изменён приоритет',
-  resolved: 'решён',
-  reopened: 'возвращён в работу',
-  research_new: 'передан на исследование ситуации',
-  coordinator_assigned: 'назначен на координаторов',
-  created: 'зарегистрирован',
-  updated: 'обновлён',
+export function initials(fullName: string | null | undefined): string {
+  if (fullName === null || fullName === undefined || fullName.trim() === '') return '?'
+  const parts = fullName.trim().split(/\s+/)
+  const a = parts[0]?.charAt(0) ?? ''
+  const b = parts[1]?.charAt(0) ?? ''
+  return (a + b).toUpperCase() || '?'
 }
 
-export const TOAST_META: Record<ChangeKind, { type: ToastType; text: (id: string) => string }> = {
-  critical_new: { type: 'critical', text: id => `Новый критический инцидент: ${id}` },
-  deadline_changed: { type: 'warning', text: id => `${id} — изменён срок` },
-  priority_changed: { type: 'info', text: id => `${id} — изменён приоритет` },
-  resolved: { type: 'success', text: id => `${id} решён` },
-  reopened: { type: 'info', text: id => `${id} возвращён в работу` },
-  research_new: { type: 'info', text: id => `${id} передан на исследование ситуации` },
-  coordinator_assigned: { type: 'info', text: id => `${id} назначен на координаторов` },
-  created: { type: 'info', text: id => `${id} зарегистрирован` },
-  updated: { type: 'info', text: id => `${id} обновлён` },
+/** «Сидорова М.» из «Сидорова Мария» и т.п. — фамилия + инициал. */
+export function shortName(fullName: string | null | undefined): string {
+  if (fullName === null || fullName === undefined || fullName.trim() === '') return '—'
+  const parts = fullName.trim().split(/\s+/)
+  if (parts.length === 1) return parts[0]
+  return `${parts[0]} ${parts[1]?.charAt(0) ?? ''}.`
 }
 
-/** Из пачки изменений по инциденту в тост выходит самый значимый kind. */
-export const KIND_PRIORITY: ChangeKind[] = [
-  'critical_new',
-  'deadline_changed',
-  'priority_changed',
-  'resolved',
-  'reopened',
-  'research_new',
-  'coordinator_assigned',
-  'created',
-  'updated',
-]
-
-export function riskClass(score: number): 'critical' | 'high' | 'ok' {
-  if (score >= 70) return 'critical'
-  if (score >= 40) return 'high'
-  return 'ok'
+export const FEED_TEXT: Record<string, string> = {
+  'incident.created': 'зарегистрирован',
+  'incident.updated': 'обновлён',
+  'incident.removed': 'удалён',
+  'incident.acknowledged': 'принят в работу',
+  'incident.comment_added': 'новый комментарий',
+  'incident.ai_updated': 'обновлён анализ BigDad',
+  'incident.sla': 'изменён SLA-статус',
+  'import.completed': 'импорт данных завершён',
+  'import.failed': 'ошибка импорта данных',
+  'notification.created': 'уведомление',
 }

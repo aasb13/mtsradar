@@ -1,78 +1,25 @@
-import type { WsChange, WsMessage } from './types'
+/**
+ * Соединение с /api/ws?token=... События типизированы ключами маршрутов
+ * (incident.updated, incident.removed, ...). Переподключение с задержкой
+ * 1с → 2с → 4с → 8с → 15с. После (пере)подключения фронт обязан
+ * перезапросить /dashboard — пропущенные события не повторяются.
+ */
 
-const CHANGE_KINDS = new Set<string>([
-  'created',
-  'updated',
-  'resolved',
-  'reopened',
-  'research_new',
-  'critical_new',
-  'coordinator_assigned',
-  'priority_changed',
-  'deadline_changed',
-])
+import { getAccessToken } from './api'
+import type { WsEnvelope } from './types'
 
 export interface SocketHandlers {
   onState: (state: 'connecting' | 'online' | 'reconnecting') => void
-  onMessage: (message: WsMessage) => void
+  onEvent: (event: WsEnvelope) => void
+  onReconnected: () => void
 }
 
-function isChange(value: unknown): value is WsChange {
-  if (typeof value !== 'object' || value === null) return false
-  const o = value as Record<string, unknown>
-  return typeof o.id === 'string' && typeof o.kind === 'string' && CHANGE_KINDS.has(o.kind)
-}
-
-function parsePayload(payload: unknown, type: 'snapshot' | 'update'): WsMessage | null {
-  if (typeof payload !== 'object' || payload === null) return null
-  const p = payload as Record<string, unknown>
-  if (!Array.isArray(p.incidents)) return null
-  const summary = p.summary
-  if (typeof summary !== 'object' || summary === null) return null
-  const s = summary as Record<string, unknown>
-  if (typeof s.kpi !== 'object' || s.kpi === null) return null
-  const incidents = p.incidents as WsMessage['payload']['incidents']
-  const parsedSummary = summary as WsMessage['payload']['summary']
-  const ts = typeof p.ts === 'string' ? p.ts : ''
-  if (type === 'snapshot') {
-    return { type: 'snapshot', payload: { incidents, summary: parsedSummary, ts } }
-  }
-  if (!Array.isArray(p.changes)) return null
-  const changes: WsChange[] = []
-  for (const raw of p.changes as unknown[]) {
-    if (isChange(raw)) {
-      changes.push(raw)
-    } else {
-      console.warn('Изменение с неизвестным форматом или типом пропущено', raw)
-    }
-  }
-  return { type: 'update', payload: { incidents, summary: parsedSummary, changes, ts } }
-}
-
-export function parseWsMessage(raw: unknown): WsMessage | null {
-  if (typeof raw !== 'string') return null
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    return null
-  }
-  if (typeof parsed !== 'object' || parsed === null) return null
-  const obj = parsed as Record<string, unknown>
-  if (obj.type !== 'snapshot' && obj.type !== 'update') return null
-  return parsePayload(obj.payload, obj.type)
-}
-
-/**
- * Соединение с /api/ws через vite-прокси. Автопереподключение
- * с экспоненциальной задержкой 1с → 2с → 4с → 8с → 15с (потолок).
- * Возвращает функцию освобождения ресурсов.
- */
-export function connectDashboardSocket(handlers: SocketHandlers): () => void {
+export function connectSocket(handlers: SocketHandlers): () => void {
   let socket: WebSocket | null = null
   let attempt = 0
   let reconnectTimer: number | null = null
   let disposed = false
+  let everConnected = false
 
   const scheduleReconnect = () => {
     const delay = Math.min(1000 * 2 ** Math.min(attempt - 1, 4), 15000)
@@ -80,10 +27,15 @@ export function connectDashboardSocket(handlers: SocketHandlers): () => void {
   }
 
   const connect = () => {
-    handlers.onState(attempt === 0 ? 'connecting' : 'reconnecting')
+    handlers.onState(everConnected ? 'reconnecting' : 'connecting')
+    const token = getAccessToken()
+    if (token === null) {
+      scheduleReconnect()
+      return
+    }
     const scheme = window.location.protocol === 'https:' ? 'wss://' : 'ws://'
     try {
-      socket = new WebSocket(`${scheme}${window.location.host}/api/ws`)
+      socket = new WebSocket(`${scheme}${window.location.host}/api/ws?token=${encodeURIComponent(token)}`)
     } catch (err) {
       console.error('Не удалось открыть WebSocket-соединение', err)
       attempt += 1
@@ -91,16 +43,29 @@ export function connectDashboardSocket(handlers: SocketHandlers): () => void {
       return
     }
     socket.onopen = () => {
+      const wasOffline = everConnected
+      everConnected = true
       attempt = 0
       handlers.onState('online')
+      if (wasOffline) handlers.onReconnected()
     }
     socket.onmessage = (event: MessageEvent) => {
-      const message = parseWsMessage(event.data)
-      if (message === null) {
-        console.error('Получено некорректное сообщение по WebSocket — пропущено', event.data)
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(String(event.data))
+      } catch {
+        console.error('Некорректный JSON по WebSocket — пропущено', event.data)
         return
       }
-      handlers.onMessage(message)
+      if (typeof parsed !== 'object' || parsed === null) return
+      const envelope = parsed as Record<string, unknown>
+      if (envelope.type === 'hello' || envelope.type === 'pong') return
+      handlers.onEvent({
+        eventId: typeof envelope.eventId === 'string' ? envelope.eventId : undefined,
+        type: String(envelope.type),
+        ts: String(envelope.ts ?? ''),
+        payload: (envelope.payload ?? {}) as Record<string, unknown>,
+      })
     }
     socket.onerror = () => {
       console.error('Ошибка WebSocket-соединения')

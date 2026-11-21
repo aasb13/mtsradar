@@ -1,38 +1,310 @@
-import type { AiRisk, AiSummary, AiTeam, Incident, Summary } from './types'
+/**
+ * Клиент REST API. Токены живут в localStorage; при 401 делается один
+ * прозрачный refresh и запрос повторяется.
+ */
 
-export interface IncidentsResponse {
-  generatedAt: string
-  incidents: Incident[]
+import type {
+  BoardResponse,
+  Comment,
+  Dictionaries,
+  DashboardResponse,
+  HistoryEvent,
+  IncidentDetail,
+  IncidentsResponse,
+  MyIncidentsResponse,
+  NotificationsResponse,
+  StatsResponse,
+  TokenPair,
+  User,
+} from './types'
+
+const ACCESS_KEY = 'radar-access-token'
+const REFRESH_KEY = 'radar-refresh-token'
+
+export function getAccessToken(): string | null {
+  try {
+    return window.localStorage.getItem(ACCESS_KEY)
+  } catch {
+    return null
+  }
 }
 
-async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`HTTP ${res.status} при запросе ${url}`)
+export function getRefreshToken(): string | null {
+  try {
+    return window.localStorage.getItem(REFRESH_KEY)
+  } catch {
+    return null
+  }
+}
+
+export function storeTokens(access: string, refresh: string): void {
+  try {
+    window.localStorage.setItem(ACCESS_KEY, access)
+    window.localStorage.setItem(REFRESH_KEY, refresh)
+  } catch (err) {
+    console.error('Не удалось сохранить токены', err)
+  }
+}
+
+export function clearTokens(): void {
+  try {
+    window.localStorage.removeItem(ACCESS_KEY)
+    window.localStorage.removeItem(REFRESH_KEY)
+  } catch (err) {
+    console.error('Не удалось удалить токены', err)
+  }
+}
+
+export class ApiError extends Error {
+  status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+  }
+}
+
+interface RequestOptions {
+  method?: string
+  body?: unknown
+  retry?: boolean
+}
+
+/** Текст ошибки сервера: FastAPI отдаёт {"detail": "..."}. */
+async function errorOf(res: Response): Promise<ApiError> {
+  let detail = ''
+  try {
+    const parsed: unknown = await res.json()
+    if (typeof parsed === 'object' && parsed !== null) {
+      const d = (parsed as Record<string, unknown>).detail
+      if (typeof d === 'string') detail = d
+      else if (typeof d === 'object' && d !== null) {
+        const msg = (d as Record<string, unknown>).message
+        if (typeof msg === 'string') detail = msg
+      }
+    }
+  } catch (err) {
+    console.error('Не удалось прочитать тело ошибки', err)
+  }
+  return new ApiError(res.status, detail || `HTTP ${res.status}`)
+}
+
+let refreshing: Promise<boolean> | null = null
+
+async function refreshTokens(): Promise<boolean> {
+  refreshing ??= (async () => {
+    const refresh = getRefreshToken()
+    if (refresh === null) return false
+    try {
+      const res = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: refresh }),
+      })
+      if (!res.ok) return false
+      const pair = (await res.json()) as TokenPair
+      storeTokens(pair.accessToken, pair.refreshToken)
+      return true
+    } catch (err) {
+      console.error('Не удалось обновить токен', err)
+      return false
+    } finally {
+      refreshing = null
+    }
+  })()
+  return refreshing
+}
+
+async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const { method = 'GET', body, retry = true } = options
+  const headers: Record<string, string> = {}
+  const token = getAccessToken()
+  if (token !== null) headers.Authorization = `Bearer ${token}`
+  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  let res: Response
+  try {
+    res = await fetch(`/api${path}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+  } catch (err) {
+    throw new ApiError(0, 'Сервер недоступен')
+  }
+  if (res.status === 401 && retry && getRefreshToken() !== null) {
+    if (await refreshTokens()) return request<T>(path, { ...options, retry: false })
+  }
+  if (!res.ok) throw await errorOf(res)
+  if (res.status === 204) return undefined as T
   return (await res.json()) as T
 }
 
-export async function fetchIncidents(): Promise<IncidentsResponse> {
-  const data = await getJson<IncidentsResponse>('/api/incidents')
-  if (!Array.isArray(data.incidents)) throw new Error('Некорректный ответ /api/incidents: incidents не является массивом')
-  return data
+// ---------------- auth ----------------
+
+export function login(email: string, password: string): Promise<TokenPair> {
+  return request<TokenPair>('/auth/login', { method: 'POST', body: { email, password } })
 }
 
-export async function fetchSummary(): Promise<Summary> {
-  const data = await getJson<Summary>('/api/summary')
-  if (typeof data !== 'object' || data === null || typeof data.kpi !== 'object' || data.kpi === null) {
-    throw new Error('Некорректный ответ /api/summary: отсутствует блок kpi')
-  }
-  return data
+export function logoutRequest(): Promise<void> {
+  const refresh = getRefreshToken()
+  if (refresh === null) return Promise.resolve()
+  return request<void>('/auth/logout', { method: 'POST', body: { refreshToken: refresh }, retry: false })
+    .catch(() => undefined) as Promise<void>
 }
 
-export function fetchAiSummary(id: string): Promise<AiSummary> {
-  return getJson<AiSummary>(`/api/ai/incidents/${encodeURIComponent(id)}/summary`)
+export function fetchMe(): Promise<User> {
+  return request<User>('/me')
 }
 
-export function fetchAiRisk(id: string): Promise<AiRisk> {
-  return getJson<AiRisk>(`/api/ai/incidents/${encodeURIComponent(id)}/risk`)
+export function patchMe(body: Partial<User>): Promise<User> {
+  return request<User>('/me', { method: 'PATCH', body })
 }
 
-export function fetchAiTeam(id: string): Promise<AiTeam> {
-  return getJson<AiTeam>(`/api/ai/incidents/${encodeURIComponent(id)}/recommend-team`)
+// ---------------- дашборд и канбан ----------------
+
+export function fetchDashboard(): Promise<DashboardResponse> {
+  return request<DashboardResponse>('/dashboard')
+}
+
+export function fetchBoard(): Promise<BoardResponse> {
+  return request<BoardResponse>('/board')
+}
+
+export interface IncidentFilters {
+  group?: string
+  stateId?: number[]
+  priorityId?: number[]
+  assignedGroupName?: string
+  productName?: string
+  slaState?: string[]
+  active?: boolean
+  q?: string
+  sort?: 'attention' | 'deadline' | 'submitDate' | 'priority'
+  order?: 'asc' | 'desc'
+  page?: number
+  perPage?: number
+}
+
+export function fetchIncidents(filters: IncidentFilters = {}): Promise<IncidentsResponse> {
+  const p = new URLSearchParams()
+  if (filters.group !== undefined) p.set('group', filters.group)
+  for (const s of filters.stateId ?? []) p.append('stateId', String(s))
+  for (const v of filters.priorityId ?? []) p.append('priorityId', String(v))
+  if (filters.assignedGroupName !== undefined) p.set('assignedGroupName', filters.assignedGroupName)
+  if (filters.productName !== undefined) p.set('productName', filters.productName)
+  for (const s of filters.slaState ?? []) p.append('slaState', s)
+  if (filters.active !== undefined) p.set('active', String(filters.active))
+  if (filters.q !== undefined && filters.q !== '') p.set('q', filters.q)
+  if (filters.sort !== undefined) p.set('sort', filters.sort)
+  if (filters.order !== undefined) p.set('order', filters.order)
+  if (filters.page !== undefined) p.set('page', String(filters.page))
+  if (filters.perPage !== undefined) p.set('perPage', String(filters.perPage))
+  const qs = p.toString()
+  return request<IncidentsResponse>(`/incidents${qs === '' ? '' : `?${qs}`}`)
+}
+
+export function fetchIncident(id: string): Promise<IncidentDetail> {
+  return request<IncidentDetail>(`/incidents/${encodeURIComponent(id)}`)
+}
+
+export function patchIncident(
+  id: string,
+  body: {
+    priorityId?: number
+    deadline?: string
+    assignedGroupName?: string
+    assignedEmployee?: string
+    header?: string
+    expectedVersion?: number
+  },
+): Promise<IncidentDetail> {
+  return request<IncidentDetail>(`/incidents/${encodeURIComponent(id)}`, { method: 'PATCH', body })
+}
+
+export function transitionIncident(
+  id: string,
+  body: { toStateId: number; stateReason?: string; solution?: string; comment?: string },
+): Promise<IncidentDetail> {
+  return request<IncidentDetail>(`/incidents/${encodeURIComponent(id)}/transition`, { method: 'POST', body })
+}
+
+export function ackIncident(id: string): Promise<unknown> {
+  return request<unknown>(`/incidents/${encodeURIComponent(id)}/ack`, { method: 'POST' })
+}
+
+export function deleteIncident(id: string): Promise<void> {
+  return request<void>(`/incidents/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export function restoreIncident(id: string): Promise<unknown> {
+  return request<unknown>(`/incidents/${encodeURIComponent(id)}/restore`, { method: 'POST' })
+}
+
+export function fetchHistory(id: string): Promise<HistoryEvent[]> {
+  return request<HistoryEvent[]>(`/incidents/${encodeURIComponent(id)}/history`)
+}
+
+export function fetchComments(id: string): Promise<Comment[]> {
+  return request<Comment[]>(`/incidents/${encodeURIComponent(id)}/comments`)
+}
+
+export function addComment(id: string, text: string): Promise<Comment> {
+  return request<Comment>(`/incidents/${encodeURIComponent(id)}/comments`, { method: 'POST', body: { text } })
+}
+
+export function addMember(id: string, userId: string): Promise<unknown> {
+  return request<unknown>(`/incidents/${encodeURIComponent(id)}/members`, { method: 'POST', body: { userId } })
+}
+
+export function requestAiRefresh(id: string): Promise<void> {
+  return request<void>(`/incidents/${encodeURIComponent(id)}/ai/refresh`, { method: 'POST' })
+}
+
+// ---------------- пользователи ----------------
+
+export function fetchUsers(): Promise<User[]> {
+  return request<User[]>('/users')
+}
+
+export function createUser(body: { email: string; password: string; fullName: string; role: string; itsmLogin?: string }): Promise<User> {
+  return request<User>('/users', { method: 'POST', body })
+}
+
+export function patchUser(id: string, body: { role?: string; fullName?: string; itsmLogin?: string }): Promise<User> {
+  return request<User>(`/users/${encodeURIComponent(id)}`, { method: 'PATCH', body })
+}
+
+export function deleteUser(id: string): Promise<void> {
+  return request<void>(`/users/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+// ---------------- уведомления ----------------
+
+export function fetchNotifications(unreadOnly = false): Promise<NotificationsResponse> {
+  return request<NotificationsResponse>(`/notifications${unreadOnly ? '?unreadOnly=true' : ''}`)
+}
+
+export function markNotificationRead(id: string): Promise<void> {
+  return request<void>(`/notifications/${encodeURIComponent(id)}/read`, { method: 'POST' })
+}
+
+export function markAllNotificationsRead(): Promise<void> {
+  return request<void>('/notifications/read-all', { method: 'POST' })
+}
+
+// ---------------- справочники, статистика, мои инциденты ----------------
+
+export function fetchDictionaries(): Promise<Dictionaries> {
+  return request<Dictionaries>('/dictionaries')
+}
+
+export function fetchStats(): Promise<StatsResponse> {
+  return request<StatsResponse>('/stats')
+}
+
+export function fetchMyIncidents(includeResolved = false): Promise<MyIncidentsResponse> {
+  return request<MyIncidentsResponse>(`/my/incidents${includeResolved ? '?includeResolved=true' : ''}`)
+}
+
+export function exportUrl(): string {
+  return '/api/export'
 }

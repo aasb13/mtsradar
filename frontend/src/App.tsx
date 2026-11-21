@@ -1,136 +1,118 @@
-import { useEffect, useMemo } from 'react'
-import { DashboardProvider, matchFilter, useDashboard } from './store'
-import { Header } from './components/Header'
-import { KpiStrip } from './components/KpiStrip'
-import { CriticalRibbon } from './components/CriticalRibbon'
-import { FilterToolbar } from './components/FilterToolbar'
-import { GROUP_ORDER, GroupSection } from './components/GroupSection'
-import { KanbanBoard } from './components/KanbanBoard'
-import { IncidentDrawer } from './components/IncidentDrawer'
-import { BigDadWidget } from './components/BigDadWidget'
-import { ToastStack } from './components/ToastStack'
-import { ShortcutsModal } from './components/ShortcutsModal'
-import type { Incident } from './types'
+import { useEffect } from 'react'
+import type { ReactNode } from 'react'
+import { AppProvider, useApp } from './store'
+import { Header, ToastStack } from './screens/shell'
+import { LoginPage, PendingPage, RegisterPage } from './screens/auth'
+import { KanbanPage } from './screens/kanban'
+import { AttentionPage } from './screens/attention'
+import { StatsPage } from './screens/stats'
+import { AdminDonePage, AdminIncidentsPage, AdminProductsPage, AdminTeamsPage, AdminUsersPage } from './screens/admin'
+import { DevPage, QaPage } from './screens/work'
+import { AssignModal, FreezeModal, IncidentPanel } from './screens/panel'
+import { navigate, useRoute } from './router'
+import type { Role } from './types'
 
-export default function App() {
-  return (
-    <DashboardProvider>
-      <Dashboard />
-    </DashboardProvider>
-  )
+const HOME_BY_ROLE: Record<Role, string> = {
+  coordinator: '/',
+  admin: '/',
+  developer: '/dev',
+  viewer: '/qa',
 }
 
-function isTypingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false
-  return target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
-}
+function Screens() {
+  const { state, dispatch } = useApp()
+  const route = useRoute()
 
-function Dashboard() {
-  const { state, dispatch, searchRef } = useDashboard()
-
+  // неавторизованный — на вход; авторизованный — на свой главный экран
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyK') {
-        e.preventDefault()
-        searchRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-        searchRef.current?.focus()
-        return
-      }
-      if (e.key === 'Escape') {
-        if (state.shortcutsOpen) dispatch({ type: 'TOGGLE_SHORTCUTS' })
-        else if (state.drawerId !== null) dispatch({ type: 'CLOSE_DRAWER' })
-        else if (!state.ribbonDismissed) dispatch({ type: 'DISMISS_RIBBON' })
-        return
-      }
-      if (isTypingTarget(e.target)) return
-      if (e.key === '?') {
-        e.preventDefault()
-        dispatch({ type: 'TOGGLE_SHORTCUTS' })
-        return
-      }
-      if (e.key >= '1' && e.key <= '4') {
-        const group = GROUP_ORDER[Number(e.key) - 1]
-        if (group === undefined) return
-        document.getElementById(`section-${group}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    if (state.user === null) {
+      if (route !== '/login' && route !== '/register' && route !== '/pending') navigate('/login', true)
+      return
+    }
+    if (route === '/login' || route === '/register' || route === '/pending') {
+      navigate(HOME_BY_ROLE[state.user.role], true)
+    }
+  }, [state.user, route])
+
+  // Esc закрывает панель инцидента
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && state.panelId !== null) {
+        dispatch({ type: 'OPEN_PANEL', id: null })
       }
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [state.shortcutsOpen, state.drawerId, state.ribbonDismissed, dispatch, searchRef])
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [state.panelId, dispatch])
 
-  const visible = useMemo(() => {
-    const query = state.search.trim().toLowerCase()
-    return state.incidents.filter(incident => {
-      if (!matchFilter(incident, state.filter, state.syncedAt, state.now)) return false
-      if (query === '') return true
-      return [incident.id, incident.header, incident.productName, incident.service, incident.assignedEmployee, incident.assignedGroupName]
-        .some(value => typeof value === 'string' && value.toLowerCase().includes(query))
-    })
-  }, [state.incidents, state.filter, state.search, state.syncedAt, state.now])
+  if (state.user === null) {
+    if (route === '/register') return <RegisterPage />
+    if (route === '/pending') return <PendingPage />
+    return <LoginPage />
+  }
 
-  const sections = GROUP_ORDER.map(group => ({
-    group,
-    rows: visible.filter((incident: Incident) => incident.groups.includes(group)),
-  }))
-  const hasRows = sections.some(section => section.rows.length > 0)
+  const user = state.user
+  const isStaff = user.role === 'coordinator' || user.role === 'admin'
+
+  let screen: ReactNode
+  switch (route) {
+    case '/':
+      screen = isStaff ? <KanbanPage /> : user.role === 'developer' ? <DevPage /> : <QaPage />
+      break
+    case '/attention':
+      screen = <AttentionPage />
+      break
+    case '/stats':
+      screen = <StatsPage />
+      break
+    case '/admin':
+      screen = <AdminIncidentsPage />
+      break
+    case '/admin/products':
+      screen = <AdminProductsPage />
+      break
+    case '/admin/teams':
+      screen = <AdminTeamsPage />
+      break
+    case '/admin/users':
+      screen = <AdminUsersPage />
+      break
+    case '/admin/done':
+      screen = <AdminDonePage />
+      break
+    case '/dev':
+      screen = <DevPage />
+      break
+    case '/qa':
+      screen = <QaPage />
+      break
+    default:
+      screen =
+        user.role === 'developer' ? (
+          <DevPage />
+        ) : user.role === 'viewer' ? (
+          <QaPage />
+        ) : (
+          <KanbanPage />
+        )
+  }
 
   return (
     <div className="app">
       <Header />
-      <main className="main">
-        {state.bootError !== null && state.incidents.length === 0 ? (
-          <div className="boot-error">
-            <p>{state.bootError}</p>
-            <button type="button" className="btn btn--primary" onClick={() => dispatch({ type: 'RELOAD' })}>
-              Повторить
-            </button>
-          </div>
-        ) : (
-          <>
-            <KpiStrip />
-            <CriticalRibbon />
-            <FilterToolbar />
-            {state.view === 'board' ? (
-              visible.length > 0 ? (
-                <KanbanBoard incidents={visible} />
-              ) : (
-                <EmptyHint />
-              )
-            ) : hasRows ? (
-              sections.map(section =>
-                section.rows.length > 0 ? (
-                  <GroupSection key={section.group} group={section.group} incidents={section.rows} />
-                ) : null,
-              )
-            ) : (
-              <EmptyHint />
-            )}
-            <BigDadWidget />
-          </>
-        )}
-      </main>
-      <IncidentDrawer />
+      <main className="page">{screen}</main>
+      {isStaff && <IncidentPanel />}
+      {isStaff && <AssignModal />}
+      {isStaff && <FreezeModal />}
       <ToastStack />
-      <ShortcutsModal />
     </div>
   )
 }
 
-function EmptyHint() {
-  const { dispatch } = useDashboard()
+export default function App() {
   return (
-    <div className="empty">
-      <p>По текущим фильтрам инцидентов нет</p>
-      <button
-        type="button"
-        className="btn"
-        onClick={() => {
-          dispatch({ type: 'SET_FILTER', filter: 'all' })
-          dispatch({ type: 'SET_SEARCH', search: '' })
-        }}
-      >
-        Сбросить фильтры
-      </button>
-    </div>
+    <AppProvider>
+      <Screens />
+    </AppProvider>
   )
 }

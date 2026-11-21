@@ -1,222 +1,239 @@
-import { createContext, useContext, useEffect, useMemo, useReducer, useRef } from 'react'
-import type { Dispatch, ReactNode, RefObject } from 'react'
-import type { ChangeKind, Incident, Summary, ToastType, WsChange, WsMessage } from './types'
-import { fetchIncidents, fetchSummary } from './api'
-import { connectDashboardSocket } from './ws'
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react'
+import type { Dispatch, ReactNode } from 'react'
+import * as api from './api'
+import { ApiError, clearTokens, getAccessToken, getRefreshToken, storeTokens } from './api'
 import { beepCritical } from './beep'
-import { FEED_TEXT, KIND_PRIORITY, TOAST_META, liveSla } from './format'
-import { noteWsUpdate } from './transition'
+import { FEED_TEXT } from './format'
+import { navigate } from './router'
+import { connectSocket } from './ws'
+import type {
+  Card,
+  Comment,
+  DashboardResponse,
+  Dictionaries,
+  IncidentDetail,
+  Notification,
+  StatsResponse,
+  ToastItem,
+  User,
+  WsEnvelope,
+} from './types'
 
-export type FilterKey = 'all' | 'critical' | 'coordinators' | 'high_priority' | 'research' | 'breached'
 export type ConnectionState = 'connecting' | 'online' | 'reconnecting'
 export type Theme = 'light' | 'dark'
-export type ViewMode = 'board' | 'groups'
 
-export interface FeedItem {
-  key: string
-  incidentId: string
-  kind: ChangeKind
-  text: string
-  ts: number
-}
-
-export type ToastKind = ChangeKind | 'boot_error' | 'move_ok' | 'move_invalid' | 'move_error'
-
-export interface ToastItem {
-  key: string
-  kind: ToastKind
-  type: ToastType
-  text: string
-  sticky: boolean
-  createdAt: number
+export interface FreezeRecord {
+  remainingSeconds: number
+  frozenAt: number
+  reason: string | null
+  autoAt: number | null
 }
 
 interface State {
-  incidents: Incident[]
-  summary: Summary | null
-  generatedAt: string | null
-  syncedAt: number | null
-  liveSynced: boolean
+  user: User | null
+  authError: string | null
+  authInProgress: boolean
   connection: ConnectionState
   bootError: string | null
-  reloadNonce: number
-  feed: FeedItem[]
+  cards: Map<string, Card>
+  cardsOrder: string[]
+  syncedAt: number | null
+  kpi: DashboardResponse['kpi'] | null
+  unacknowledgedCritical: string[]
+  dictionaries: Dictionaries | null
+  stats: StatsResponse | null
+  resolvedYesterday: number
+  coordinatorCount: number
+  notifications: Notification[]
   unread: number
   toasts: ToastItem[]
-  ribbonDismissed: boolean
-  drawerId: string | null
-  filter: FilterKey
   search: string
   theme: Theme
-  view: ViewMode
-  movingIds: string[]
-  shortcutsOpen: boolean
+  filters: { priorityId: number | null; product: string | null; team: string | null; sla: string | null }
+  panelId: string | null
+  assignId: string | null
+  freezeId: string | null
+  freeze: Record<string, FreezeRecord>
   now: number
 }
 
-const THEME_KEY = 'mts-dashboard-theme'
-const VIEW_KEY = 'mts-dashboard-view'
-const FEED_LIMIT = 50
-const TOAST_LIMIT = 5
+const THEME_KEY = 'radar-theme'
+const FREEZE_KEY = 'radar-freeze'
+const PENDING_KEY = 'radar-pending-users'
+
+const TOAST_LIMIT = 4
 
 function makeInitialState(): State {
   let theme: Theme = 'light'
   try {
     if (window.localStorage.getItem(THEME_KEY) === 'dark') theme = 'dark'
   } catch (err) {
-    console.error('Не удалось прочитать тему из localStorage', err)
+    console.error('Не удалось прочитать тему', err)
   }
-  let view: ViewMode = 'board'
+  let freeze: Record<string, FreezeRecord> = {}
   try {
-    if (window.localStorage.getItem(VIEW_KEY) === 'groups') view = 'groups'
+    const raw = window.localStorage.getItem(FREEZE_KEY)
+    if (raw !== null) freeze = JSON.parse(raw) as Record<string, FreezeRecord>
   } catch (err) {
-    console.error('Не удалось прочитать режим отображения из localStorage', err)
+    console.error('Не удалось прочитать заморозки', err)
   }
   return {
-    incidents: [],
-    summary: null,
-    generatedAt: null,
-    syncedAt: null,
-    liveSynced: false,
+    user: null,
+    authError: null,
+    authInProgress: false,
     connection: 'connecting',
     bootError: null,
-    reloadNonce: 0,
-    feed: [],
+    cards: new Map(),
+    cardsOrder: [],
+    syncedAt: null,
+    kpi: null,
+    unacknowledgedCritical: [],
+    dictionaries: null,
+    stats: null,
+    resolvedYesterday: 0,
+    coordinatorCount: 1,
+    notifications: [],
     unread: 0,
     toasts: [],
-    ribbonDismissed: false,
-    drawerId: null,
-    filter: 'all',
     search: '',
     theme,
-    view,
-    movingIds: [],
-    shortcutsOpen: false,
+    filters: { priorityId: null, product: null, team: null, sla: null },
+    panelId: null,
+    assignId: null,
+    freezeId: null,
+    freeze,
     now: Date.now(),
   }
 }
 
 export type Action =
-  | { type: 'BOOT_OK'; incidents: Incident[]; summary: Summary }
-  | { type: 'BOOT_FAIL'; message: string; toast: ToastItem }
-  | { type: 'SNAPSHOT'; incidents: Incident[]; summary: Summary }
-  | { type: 'UPDATE'; incidents: Incident[]; summary: Summary; feed: FeedItem[]; toasts: ToastItem[] }
+  | { type: 'AUTH_START' }
+  | { type: 'AUTH_SUCCESS'; user: User }
+  | { type: 'AUTH_FAIL'; message: string }
+  | { type: 'AUTH_LOGOUT' }
+  | { type: 'BOOT_OK'; cards: Card[]; dashboard: DashboardResponse; dictionaries: Dictionaries }
+  | { type: 'BOOT_FAIL'; message: string }
+  | { type: 'UPSERT_CARDS'; cards: Card[] }
+  | { type: 'REMOVE_CARD'; id: string }
+  | { type: 'SET_KPI'; kpi: DashboardResponse['kpi']; unacknowledgedCritical: string[] }
+  | { type: 'SET_STATS'; stats: StatsResponse }
+  | { type: 'SET_RESOLVED_YESTERDAY'; count: number }
+  | { type: 'SET_COORDINATOR_COUNT'; count: number }
   | { type: 'CONN'; state: ConnectionState }
-  | { type: 'RELOAD' }
   | { type: 'TICK'; now: number }
-  | { type: 'DISMISS_TOAST'; key: string }
-  | { type: 'MARK_FEED_READ' }
-  | { type: 'DISMISS_RIBBON' }
-  | { type: 'OPEN_DRAWER'; id: string }
-  | { type: 'CLOSE_DRAWER' }
-  | { type: 'SET_FILTER'; filter: FilterKey }
   | { type: 'SET_SEARCH'; search: string }
   | { type: 'SET_THEME'; theme: Theme }
-  | { type: 'SET_VIEW'; view: ViewMode }
+  | { type: 'SET_FILTERS'; patch: Partial<State['filters']> }
+  | { type: 'SET_NOTIFICATIONS'; items: Notification[]; unread: number }
+  | { type: 'ADD_NOTIFICATION'; notification: Notification }
   | { type: 'ADD_TOAST'; toast: ToastItem }
-  | { type: 'RESYNC'; incidents: Incident[] }
-  | { type: 'MOVE_START'; id: string }
-  | { type: 'MOVE_END'; id: string }
-  | { type: 'TOGGLE_SHORTCUTS' }
+  | { type: 'DISMISS_TOAST'; key: string }
+  | { type: 'OPEN_PANEL'; id: string | null }
+  | { type: 'OPEN_ASSIGN'; id: string | null }
+  | { type: 'OPEN_FREEZE'; id: string | null }
+  | { type: 'FREEZE'; id: string; record: FreezeRecord }
+  | { type: 'UNFREEZE'; id: string }
 
-function capToasts(list: ToastItem[]): ToastItem[] {
-  const result = [...list]
-  while (result.length > TOAST_LIMIT) {
-    const idx = result.findIndex(t => !t.sticky)
-    result.splice(idx === -1 ? 0 : idx, 1)
-  }
-  return result
-}
-
-function mergeToasts(existing: ToastItem[], incoming: ToastItem[]): ToastItem[] {
-  const keys = new Set(existing.map(t => t.key))
-  const merged = [...existing]
-  for (const toast of incoming) {
-    if (!keys.has(toast.key)) {
-      keys.add(toast.key)
-      merged.push(toast)
-    }
-  }
-  return capToasts(merged)
+function toast(state: State, item: ToastItem): State {
+  return { ...state, toasts: [...state.toasts.filter(t => t.key !== item.key), item].slice(-TOAST_LIMIT) }
 }
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
+    case 'AUTH_START':
+      return { ...state, authInProgress: true, authError: null }
+    case 'AUTH_SUCCESS':
+      return { ...state, user: action.user, authInProgress: false, authError: null, bootError: null }
+    case 'AUTH_FAIL':
+      return { ...state, authInProgress: false, authError: action.message }
+    case 'AUTH_LOGOUT':
+      return { ...makeInitialState(), theme: state.theme }
     case 'BOOT_OK': {
-      if (state.liveSynced) return state
+      const cards = new Map(state.cards)
+      const order: string[] = []
+      for (const card of action.cards) {
+        cards.set(card.id, card)
+        order.push(card.id)
+      }
+      for (const id of state.cardsOrder) if (!order.includes(id)) order.push(id)
       return {
         ...state,
-        incidents: action.incidents,
-        summary: action.summary,
-        generatedAt: action.summary.generatedAt,
+        cards,
+        cardsOrder: [...order, ...state.cardsOrder.filter(id => !order.includes(id))],
         syncedAt: Date.now(),
+        kpi: action.dashboard.kpi,
+        unacknowledgedCritical: action.dashboard.unacknowledgedCritical,
+        dictionaries: action.dictionaries,
         bootError: null,
       }
     }
-    case 'BOOT_FAIL': {
-      const toasts = state.toasts.filter(t => t.kind !== 'boot_error')
-      return { ...state, bootError: action.message, toasts: capToasts([...toasts, action.toast]) }
+    case 'BOOT_FAIL':
+      return { ...state, bootError: action.message }
+    case 'UPSERT_CARDS': {
+      const cards = new Map(state.cards)
+      for (const card of action.cards) cards.set(card.id, card)
+      return { ...state, cards, syncedAt: Date.now() }
     }
-    case 'SNAPSHOT':
-      return {
-        ...state,
-        incidents: action.incidents,
-        summary: action.summary,
-        generatedAt: action.summary.generatedAt,
-        syncedAt: Date.now(),
-        liveSynced: true,
-        bootError: null,
-      }
-    case 'UPDATE': {
-      const toasts = mergeToasts(state.toasts, action.toasts)
-      return {
-        ...state,
-        incidents: action.incidents,
-        summary: action.summary,
-        generatedAt: action.summary.generatedAt,
-        syncedAt: Date.now(),
-        liveSynced: true,
-        bootError: null,
-        feed: [...action.feed, ...state.feed].slice(0, FEED_LIMIT),
-        unread: state.unread + action.feed.length,
-        toasts,
-        ribbonDismissed: action.toasts.some(t => t.kind === 'critical_new') ? false : state.ribbonDismissed,
-      }
+    case 'REMOVE_CARD': {
+      const cards = new Map(state.cards)
+      cards.delete(action.id)
+      return { ...state, cards }
     }
+    case 'SET_KPI':
+      return { ...state, kpi: action.kpi, unacknowledgedCritical: action.unacknowledgedCritical }
+    case 'SET_STATS':
+      return { ...state, stats: action.stats }
+    case 'SET_RESOLVED_YESTERDAY':
+      return { ...state, resolvedYesterday: action.count }
+    case 'SET_COORDINATOR_COUNT':
+      return { ...state, coordinatorCount: Math.max(1, action.count) }
     case 'CONN':
       return { ...state, connection: action.state }
-    case 'RELOAD':
-      return { ...state, reloadNonce: state.reloadNonce + 1 }
     case 'TICK':
       return { ...state, now: action.now }
-    case 'DISMISS_TOAST':
-      return { ...state, toasts: state.toasts.filter(t => t.key !== action.key) }
-    case 'MARK_FEED_READ':
-      return { ...state, unread: 0 }
-    case 'DISMISS_RIBBON':
-      return { ...state, ribbonDismissed: true }
-    case 'OPEN_DRAWER':
-      return { ...state, drawerId: action.id }
-    case 'CLOSE_DRAWER':
-      return { ...state, drawerId: null }
-    case 'SET_FILTER':
-      return { ...state, filter: action.filter }
     case 'SET_SEARCH':
       return { ...state, search: action.search }
     case 'SET_THEME':
       return { ...state, theme: action.theme }
-    case 'SET_VIEW':
-      return { ...state, view: action.view }
+    case 'SET_FILTERS':
+      return { ...state, filters: { ...state.filters, ...action.patch } }
+    case 'SET_NOTIFICATIONS':
+      return { ...state, notifications: action.items, unread: action.unread }
+    case 'ADD_NOTIFICATION':
+      return {
+        ...state,
+        notifications: [action.notification, ...state.notifications].slice(0, 50),
+        unread: action.notification.readAt === null ? state.unread + 1 : state.unread,
+      }
     case 'ADD_TOAST':
-      return { ...state, toasts: mergeToasts(state.toasts, [action.toast]) }
-    case 'RESYNC':
-      return { ...state, incidents: action.incidents, syncedAt: Date.now() }
-    case 'MOVE_START':
-      return state.movingIds.includes(action.id) ? state : { ...state, movingIds: [...state.movingIds, action.id] }
-    case 'MOVE_END':
-      return { ...state, movingIds: state.movingIds.filter(id => id !== action.id) }
-    case 'TOGGLE_SHORTCUTS':
-      return { ...state, shortcutsOpen: !state.shortcutsOpen }
+      return toast(state, action.toast)
+    case 'DISMISS_TOAST':
+      return { ...state, toasts: state.toasts.filter(t => t.key !== action.key) }
+    case 'OPEN_PANEL':
+      return { ...state, panelId: action.id }
+    case 'OPEN_ASSIGN':
+      return { ...state, assignId: action.id }
+    case 'OPEN_FREEZE':
+      return { ...state, freezeId: action.id }
+    case 'FREEZE': {
+      const freeze = { ...state.freeze, [action.id]: action.record }
+      try {
+        window.localStorage.setItem(FREEZE_KEY, JSON.stringify(freeze))
+      } catch (err) {
+        console.error('Не удалось сохранить заморозку', err)
+      }
+      return { ...state, freeze }
+    }
+    case 'UNFREEZE': {
+      const freeze = { ...state.freeze }
+      delete freeze[action.id]
+      try {
+        window.localStorage.setItem(FREEZE_KEY, JSON.stringify(freeze))
+      } catch (err) {
+        console.error('Не удалось сохранить заморозки', err)
+      }
+      return { ...state, freeze }
+    }
     default: {
       const never: never = action
       void never
@@ -225,143 +242,445 @@ function reducer(state: State, action: Action): State {
   }
 }
 
-/**
- * Пачка изменений из одного update-сообщения → лента в «колокольчике»
- * (по одному событию на уникальную пару id+kind) и тосты (по одному
- * на инцидент — самый значимый kind; повторы гасятся по ключу).
- */
-function buildChangeItems(changes: WsChange[], ts: number): { feed: FeedItem[]; toasts: ToastItem[] } {
-  const seenPairs = new Set<string>()
-  const feed: FeedItem[] = []
-  for (const change of changes) {
-    const pairKey = `${change.id}|${change.kind}`
-    if (seenPairs.has(pairKey)) continue
-    seenPairs.add(pairKey)
-    feed.push({
-      key: `${ts}|${pairKey}`,
-      incidentId: change.id,
-      kind: change.kind,
-      text: `${change.id} — ${FEED_TEXT[change.kind]}`,
-      ts,
-    })
-  }
-  const topKind = new Map<string, ChangeKind>()
-  for (const change of changes) {
-    const current = topKind.get(change.id)
-    if (current === undefined || KIND_PRIORITY.indexOf(change.kind) < KIND_PRIORITY.indexOf(current)) {
-      topKind.set(change.id, change.kind)
-    }
-  }
-  const toasts: ToastItem[] = []
-  for (const [id, kind] of topKind) {
-    const meta = TOAST_META[kind]
-    toasts.push({
-      key: `${id}|${kind}`,
-      kind,
-      type: meta.type,
-      text: meta.text(id),
-      sticky: kind === 'critical_new',
-      createdAt: ts,
-    })
-  }
-  return { feed, toasts }
+function isCardPayloadCard(value: unknown): value is Card {
+  if (typeof value !== 'object' || value === null) return false
+  const o = value as Record<string, unknown>
+  return typeof o.id === 'string' && typeof o.stateId === 'number' && Array.isArray(o.groups)
 }
 
-export function matchFilter(incident: Incident, filter: FilterKey, syncedAt: number | null, now: number): boolean {
-  if (filter === 'all') return true
-  if (filter === 'breached') return liveSla(incident, syncedAt, now).breached
-  return incident.groups.includes(filter)
+function cardFrom(value: unknown): Card | null {
+  return isCardPayloadCard(value) ? value : null
 }
 
-interface DashboardContextValue {
+interface AppContextValue {
   state: State
   dispatch: Dispatch<Action>
-  searchRef: RefObject<HTMLInputElement | null>
+  login: (email: string, password: string) => Promise<void>
+  logout: () => Promise<void>
+  registerPending: (email: string, fullName: string) => void
+  pendingUsers: () => { email: string; fullName: string; requestedAt: string }[]
+  consumePending: (email: string) => void
+  refreshDashboard: () => Promise<void>
+  refreshBoard: () => Promise<void>
+  refreshStats: () => Promise<void>
+  doTransition: (card: Card, toStateId: number, extra?: { stateReason?: string; solution?: string; comment?: string }) => Promise<boolean>
+  doAck: (id: string) => Promise<void>
+  doAssign: (card: Card, team: string, executorUserId: string | null) => Promise<boolean>
+  doFreeze: (id: string, record: FreezeRecord) => void
+  doUnfreeze: (id: string) => void
+  showToast: (text: string, tone?: ToastItem['tone']) => void
 }
 
-const DashboardContext = createContext<DashboardContextValue | null>(null)
+const AppContext = createContext<AppContextValue | null>(null)
 
-export function useDashboard(): DashboardContextValue {
-  const ctx = useContext(DashboardContext)
-  if (ctx === null) throw new Error('useDashboard должен вызываться внутри DashboardProvider')
+export function useApp(): AppContextValue {
+  const ctx = useContext(AppContext)
+  if (ctx === null) throw new Error('useApp должен вызываться внутри AppProvider')
   return ctx
 }
 
-export function DashboardProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, null, makeInitialState)
-  const searchRef = useRef<HTMLInputElement | null>(null)
+const DASHBOARD_REFRESH_DEBOUNCE_MS = 400
 
+export function AppProvider({ children }: { children: ReactNode }) {
+  const [state, dispatch] = useReducer(reducer, null, makeInitialState)
+  const stateRef = useRef(state)
+  stateRef.current = state
+
+  const showToast = useCallback((text: string, tone: ToastItem['tone'] = 'info') => {
+    dispatch({ type: 'ADD_TOAST', toast: { key: `${Date.now()}|${Math.random()}|${text}`, tone, text, createdAt: Date.now() } })
+  }, [])
+
+  // тикающие часы для живых SLA-таймеров
   useEffect(() => {
     const timer = window.setInterval(() => dispatch({ type: 'TICK', now: Date.now() }), 1000)
     return () => window.clearInterval(timer)
   }, [])
 
+  // тема
   useEffect(() => {
     document.documentElement.dataset.theme = state.theme
     try {
       window.localStorage.setItem(THEME_KEY, state.theme)
     } catch (err) {
-      console.error('Не удалось сохранить тему в localStorage', err)
+      console.error('Не удалось сохранить тему', err)
     }
   }, [state.theme])
 
-  useEffect(() => {
+  const pendingUsers = useCallback(() => {
     try {
-      window.localStorage.setItem(VIEW_KEY, state.view)
-    } catch (err) {
-      console.error('Не удалось сохранить режим отображения в localStorage', err)
+      const raw = window.localStorage.getItem(PENDING_KEY)
+      return raw === null ? [] : (JSON.parse(raw) as { email: string; fullName: string; requestedAt: string }[])
+    } catch {
+      return []
     }
-  }, [state.view])
+  }, [])
 
+  const consumePending = useCallback((email: string) => {
+    try {
+      const rest = pendingUsers().filter(u => u.email !== email)
+      window.localStorage.setItem(PENDING_KEY, JSON.stringify(rest))
+    } catch (err) {
+      console.error('Не удалось обновить заявки', err)
+    }
+  }, [pendingUsers])
+
+  const registerPending = useCallback(
+    (email: string, fullName: string) => {
+      try {
+        const rest = pendingUsers().filter(u => u.email !== email)
+        rest.push({ email, fullName, requestedAt: new Date().toISOString() })
+        window.localStorage.setItem(PENDING_KEY, JSON.stringify(rest))
+      } catch (err) {
+        console.error('Не удалось сохранить заявку', err)
+      }
+    },
+    [pendingUsers],
+  )
+
+  const refreshDashboard = useCallback(async () => {
+    try {
+      const dashboard = await api.fetchDashboard()
+      dispatch({ type: 'SET_KPI', kpi: dashboard.kpi, unacknowledgedCritical: dashboard.unacknowledgedCritical })
+      const groups = Object.values(dashboard.groups).flat()
+      if (groups.length > 0) dispatch({ type: 'UPSERT_CARDS', cards: groups })
+    } catch (err) {
+      console.error('Не удалось обновить дашборд', err)
+    }
+  }, [])
+
+  const refreshBoard = useCallback(async () => {
+    try {
+      const board = await api.fetchBoard()
+      const cards = board.columns.flatMap(c => c.cards)
+      dispatch({ type: 'UPSERT_CARDS', cards })
+    } catch (err) {
+      console.error('Не удалось обновить доску', err)
+    }
+  }, [])
+
+  const refreshStats = useCallback(async () => {
+    try {
+      const stats = await api.fetchStats()
+      dispatch({ type: 'SET_STATS', stats })
+      const resolved = await api.fetchIncidents({ stateId: [7, 10], perPage: 500 })
+      dispatch({ type: 'UPSERT_CARDS', cards: resolved.items })
+      const dayMs = 86400000
+      const dayStart = new Date()
+      dayStart.setHours(0, 0, 0, 0)
+      const yesterdayStart = dayStart.getTime() - dayMs
+      const count = resolved.items.filter(c => {
+        const t = c.completionDate === null ? NaN : Date.parse(c.completionDate)
+        return !Number.isNaN(t) && t >= yesterdayStart && t < dayStart.getTime()
+      }).length
+      dispatch({ type: 'SET_RESOLVED_YESTERDAY', count })
+    } catch (err) {
+      console.error('Не удалось обновить статистику', err)
+    }
+  }, [])
+
+  const dashboardTimer = useRef<number | null>(null)
+  const scheduleDashboardRefresh = useCallback(() => {
+    if (dashboardTimer.current !== null) return
+    dashboardTimer.current = window.setTimeout(() => {
+      dashboardTimer.current = null
+      void refreshDashboard()
+    }, DASHBOARD_REFRESH_DEBOUNCE_MS)
+  }, [refreshDashboard])
+
+  const boot = useCallback(
+    async (user: User) => {
+      dispatch({ type: 'AUTH_SUCCESS', user })
+      try {
+        const [dashboard, dictionaries] = await Promise.all([api.fetchDashboard(), api.fetchDictionaries()])
+        const groups = Object.values(dashboard.groups).flat()
+        dispatch({
+          type: 'BOOT_OK',
+          cards: groups,
+          dashboard,
+          dictionaries,
+        })
+        void refreshBoard()
+        void refreshStats()
+        const notifications = await api.fetchNotifications()
+        dispatch({ type: 'SET_NOTIFICATIONS', items: notifications.items, unread: notifications.unread })
+        try {
+          const users = await api.fetchUsers()
+          dispatch({ type: 'SET_COORDINATOR_COUNT', count: users.filter(u => u.role === 'coordinator' && u.deletedAt === null).length })
+        } catch (err) {
+          console.error('Не удалось загрузить пользователей', err)
+        }
+      } catch (err) {
+        console.error('Не удалось загрузить данные', err)
+        dispatch({ type: 'BOOT_FAIL', message: 'Не удалось загрузить данные дашборда' })
+      }
+    },
+    [refreshBoard, refreshStats],
+  )
+
+  // восстановление сессии при старте
   useEffect(() => {
-    let cancelled = false
+    const token = getAccessToken()
+    const refresh = getRefreshToken()
+    if (token === null && refresh === null) return
     void (async () => {
       try {
-        const [incidentsRes, summary] = await Promise.all([fetchIncidents(), fetchSummary()])
-        if (!cancelled) dispatch({ type: 'BOOT_OK', incidents: incidentsRes.incidents, summary })
+        const user = await api.fetchMe()
+        await boot(user)
       } catch (err) {
-        console.error('Не удалось загрузить данные дашборда', err)
-        if (!cancelled) {
-          dispatch({
-            type: 'BOOT_FAIL',
-            message: 'Сервер недоступен. Данные дашборда не загружены.',
-            toast: {
-              key: 'boot_error',
-              kind: 'boot_error',
-              type: 'critical',
-              text: 'Не удалось загрузить данные дашборда',
-              sticky: false,
-              createdAt: Date.now(),
-            },
-          })
-        }
+        console.error('Сессия недействительна', err)
+        clearTokens()
       }
     })()
-    const disposeSocket = connectDashboardSocket({
+    // boot стабилен: ссылочные колбэки
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // WebSocket живёт, пока есть пользователь
+  const user = state.user
+  useEffect(() => {
+    if (user === null) return
+    const dispose = connectSocket({
       onState: connection => dispatch({ type: 'CONN', state: connection }),
-      onMessage: (message: WsMessage) => {
-        const receivedAt = Date.now()
-        if (message.type === 'snapshot') {
-          dispatch({ type: 'SNAPSHOT', incidents: message.payload.incidents, summary: message.payload.summary })
-          return
+      onReconnected: () => {
+        void refreshDashboard()
+        void refreshBoard()
+      },
+      onEvent: (event: WsEnvelope) => {
+        const payload = event.payload
+        switch (event.type) {
+          case 'incident.created':
+          case 'incident.updated':
+          case 'incident.ai_updated':
+          case 'incident.sla':
+          case 'incident.acknowledged': {
+            const card = cardFrom(payload.card)
+            if (card !== null) {
+              dispatch({ type: 'UPSERT_CARDS', cards: [card] })
+              scheduleDashboardRefresh()
+            }
+            if (event.type === 'incident.created') {
+              showToast(`${card?.id ?? ''} — ${FEED_TEXT[event.type] ?? 'событие'}`, 'info')
+            }
+            if (event.type === 'incident.ai_updated') {
+              showToast('BigDad обновил анализ инцидента', 'info')
+            }
+            break
+          }
+          case 'incident.removed':
+            dispatch({ type: 'REMOVE_CARD', id: String(payload.incidentId ?? '') })
+            scheduleDashboardRefresh()
+            break
+          case 'incident.comment_added': {
+            const comment = payload.comment as Comment | undefined
+            if (comment !== undefined) {
+              window.dispatchEvent(new CustomEvent('radar:comment', { detail: comment }))
+            }
+            break
+          }
+          case 'notification.created': {
+            const notification = payload.notification as Notification | undefined
+            if (notification !== undefined) {
+              dispatch({ type: 'ADD_NOTIFICATION', notification })
+              if (notification.body !== null && notification.body !== '') {
+                showToast(notification.body, 'info')
+              }
+            }
+            break
+          }
+          case 'import.completed':
+            showToast('Данные обновлены из файла инцидентов', 'success')
+            void refreshBoard()
+            scheduleDashboardRefresh()
+            void refreshStats()
+            break
+          case 'import.failed':
+            showToast('Не удалось импортировать данные файла', 'critical')
+            break
+          default:
+            break
         }
-        const { feed, toasts } = buildChangeItems(message.payload.changes, receivedAt)
-        if (message.payload.changes.some(c => c.kind === 'critical_new')) beepCritical()
-        noteWsUpdate(
-          message.payload.changes.length > 0
-            ? message.payload.changes.map(c => c.id)
-            : message.payload.incidents.map(i => i.id),
-        )
-        dispatch({ type: 'UPDATE', incidents: message.payload.incidents, summary: message.payload.summary, feed, toasts })
       },
     })
-    return () => {
-      cancelled = true
-      disposeSocket()
+    return dispose
+  }, [user, refreshDashboard, refreshBoard, refreshStats, scheduleDashboardRefresh, showToast])
+
+  // авто-разморозка по времени
+  useEffect(() => {
+    const frozen = Object.entries(state.freeze)
+    if (frozen.length === 0) return
+    const now = Date.now()
+    for (const [id, record] of frozen) {
+      if (record.autoAt !== null && record.autoAt <= now) {
+        dispatch({ type: 'UNFREEZE', id })
+        showToast(`${id} разморожен по расписанию`, 'info')
+      }
     }
-  }, [state.reloadNonce])
+  }, [state.now, state.freeze, showToast])
 
-  const value = useMemo<DashboardContextValue>(() => ({ state, dispatch, searchRef }), [state])
+  const login = useCallback(
+    async (email: string, password: string) => {
+      dispatch({ type: 'AUTH_START' })
+      try {
+        const pair = await api.login(email, password)
+        storeTokens(pair.accessToken, pair.refreshToken)
+        await boot(pair.user)
+        navigate(pair.user.role === 'developer' ? '/dev' : pair.user.role === 'viewer' ? '/qa' : '/')
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) {
+          dispatch({ type: 'AUTH_FAIL', message: 'Неверная почта или пароль' })
+        } else if (err instanceof ApiError && err.status === 429) {
+          dispatch({ type: 'AUTH_FAIL', message: err.message })
+        } else {
+          console.error('Ошибка входа', err)
+          dispatch({ type: 'AUTH_FAIL', message: 'Сервер недоступен. Попробуйте ещё раз.' })
+        }
+      }
+    },
+    [boot],
+  )
 
-  return <DashboardContext.Provider value={value}>{children}</DashboardContext.Provider>
+  const logout = useCallback(async () => {
+    try {
+      await api.logoutRequest()
+    } catch (err) {
+      console.error('Не удалось выйти', err)
+    }
+    clearTokens()
+    dispatch({ type: 'AUTH_LOGOUT' })
+    navigate('/login')
+  }, [])
+
+  const doTransition = useCallback(
+    async (card: Card, toStateId: number, extra?: { stateReason?: string; solution?: string; comment?: string }) => {
+      try {
+        const detail: IncidentDetail = await api.transitionIncident(card.id, { toStateId, ...extra })
+        dispatch({ type: 'UPSERT_CARDS', cards: [detail] })
+        scheduleDashboardRefresh()
+        return true
+      } catch (err) {
+        if (err instanceof ApiError) {
+          showToast(err.message, 'warning')
+        } else {
+          console.error('Ошибка перехода', err)
+          showToast('Не удалось изменить статус: сервер недоступен', 'critical')
+        }
+        return false
+      }
+    },
+    [scheduleDashboardRefresh, showToast],
+  )
+
+  const doAck = useCallback(
+    async (id: string) => {
+      try {
+        await api.ackIncident(id)
+        scheduleDashboardRefresh()
+      } catch (err) {
+        if (err instanceof ApiError) showToast(err.message, 'warning')
+        else showToast('Не удалось принять инцидент', 'critical')
+      }
+    },
+    [scheduleDashboardRefresh, showToast],
+  )
+
+  const doAssign = useCallback(
+    async (card: Card, team: string, executorUserId: string | null) => {
+      try {
+        const detail = await api.patchIncident(card.id, { assignedGroupName: team })
+        dispatch({ type: 'UPSERT_CARDS', cards: [detail] })
+        if (executorUserId !== null) {
+          try {
+            const users = await api.fetchUsers()
+            const dev = users.find(u => u.id === executorUserId)
+            if (dev !== undefined) {
+              await api.addMember(card.id, executorUserId)
+              showToast(`${team} · ${dev.fullName ?? dev.email} — назначено уведомление`, 'success')
+            }
+          } catch (err) {
+            console.error('Не удалось добавить участника', err)
+          }
+        }
+        showToast(`Инцидент ${card.id} назначен команде ${team}`, 'success')
+        scheduleDashboardRefresh()
+        return true
+      } catch (err) {
+        if (err instanceof ApiError) showToast(err.message, 'warning')
+        else showToast('Не удалось назначить команду', 'critical')
+        return false
+      }
+    },
+    [scheduleDashboardRefresh, showToast],
+  )
+
+  const doFreeze = useCallback((id: string, record: FreezeRecord) => {
+    dispatch({ type: 'FREEZE', id, record })
+  }, [])
+
+  const doUnfreeze = useCallback((id: string) => {
+    dispatch({ type: 'UNFREEZE', id })
+  }, [])
+
+  // звук на новый критический (карточка стала критической и не была)
+  const criticalIdsRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (state.user === null) {
+      criticalIdsRef.current = new Set()
+      return
+    }
+    const nowCritical = new Set<string>()
+    for (const card of state.cards.values()) {
+      if (card.isCritical && card.isActive) nowCritical.add(card.id)
+    }
+    const hadAny = criticalIdsRef.current.size > 0
+    for (const id of nowCritical) {
+      if (hadAny && !criticalIdsRef.current.has(id)) {
+        beepCritical()
+        showToast(`Новый критический инцидент: ${id}`, 'critical')
+        break
+      }
+    }
+    criticalIdsRef.current = nowCritical
+  }, [state.cards, state.user, showToast])
+
+  const value = useMemo<AppContextValue>(
+    () => ({
+      state,
+      dispatch,
+      login,
+      logout,
+      registerPending,
+      pendingUsers,
+      consumePending,
+      refreshDashboard,
+      refreshBoard,
+      refreshStats,
+      doTransition,
+      doAck,
+      doAssign,
+      doFreeze,
+      doUnfreeze,
+      showToast,
+    }),
+    [state, login, logout, registerPending, pendingUsers, consumePending, refreshDashboard, refreshBoard, refreshStats, doTransition, doAck, doAssign, doFreeze, doUnfreeze, showToast],
+  )
+
+  return <AppContext.Provider value={value}>{children}</AppContext.Provider>
+}
+
+/** Фильтрация карточек по строке поиска и активным фильтрам шапки. */
+export function filterCards(
+  cards: Card[],
+  search: string,
+  filters: State['filters'],
+): Card[] {
+  const query = search.trim().toLowerCase()
+  return cards.filter(card => {
+    if (filters.priorityId !== null && card.priorityId !== filters.priorityId) return false
+    if (filters.product !== null && card.productName !== filters.product) return false
+    if (filters.team !== null && card.assignedGroupName !== filters.team) return false
+    if (filters.sla !== null && card.sla.state !== filters.sla) return false
+    if (query === '') return true
+    return [card.id, card.header, card.productName, card.service, card.assignedEmployee, card.assignedGroupName]
+      .some(value => typeof value === 'string' && value.toLowerCase().includes(query))
+  })
 }
