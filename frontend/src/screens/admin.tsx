@@ -82,6 +82,9 @@ export function AdminIncidentsPage() {
 
   useEffect(() => {
     void reload()
+    const onChange = () => void reload()
+    window.addEventListener('radar:incident-changed', onChange)
+    return () => window.removeEventListener('radar:incident-changed', onChange)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusTab, state.filters.priorityId, state.filters.product, state.filters.team, state.filters.sla, state.search])
 
@@ -760,6 +763,9 @@ export function AdminTeamsPage() {
 
   useEffect(() => {
     void reloadUsers()
+    const onChange = () => void reloadUsers()
+    window.addEventListener('radar:users-changed', onChange)
+    return () => window.removeEventListener('radar:users-changed', onChange)
   }, [reloadUsers])
 
   const teams = useMemo(
@@ -1080,9 +1086,14 @@ export function AdminUsersPage() {
   useEffect(() => {
     void reload()
     // новые заявки и решения приходят по WebSocket — молча обновляем список
-    const onChange = () => void load()
-    window.addEventListener('radar:registration', onChange)
-    return () => window.removeEventListener('radar:registration', onChange)
+    const onRegistration = () => void load()
+    const onUsers = () => void load()
+    window.addEventListener('radar:registration', onRegistration)
+    window.addEventListener('radar:users-changed', onUsers)
+    return () => {
+      window.removeEventListener('radar:registration', onRegistration)
+      window.removeEventListener('radar:users-changed', onUsers)
+    }
   }, [])
 
   const approve = async (request: RegistrationRequest, role: Role, itsmLogin: string) => {
@@ -1546,20 +1557,25 @@ export function AdminDonePage() {
   const [items, setItems] = useState<Card[]>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    void (async () => {
-      setLoading(true)
-      try {
-        const res = await api.fetchIncidents({ stateId: [10], perPage: 200, sort: 'submitDate', order: 'desc' })
-        setItems(res.items)
-      } catch (err) {
-        console.error('Не удалось загрузить завершённые', err)
-        showToast('Не удалось загрузить завершённые инциденты', 'warning')
-      } finally {
-        setLoading(false)
-      }
-    })()
+  const reload = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await api.fetchIncidents({ stateId: [10], perPage: 200, sort: 'submitDate', order: 'desc' })
+      setItems(res.items)
+    } catch (err) {
+      console.error('Не удалось загрузить завершённые', err)
+      showToast('Не удалось загрузить завершённые инциденты', 'warning')
+    } finally {
+      setLoading(false)
+    }
   }, [showToast])
+
+  useEffect(() => {
+    void reload()
+    const onChange = () => void reload()
+    window.addEventListener('radar:incident-changed', onChange)
+    return () => window.removeEventListener('radar:incident-changed', onChange)
+  }, [reload])
 
   const weekAgo = state.now - 7 * 86400000
   const closedWeek = items.filter(c => c.completionDate !== null && Date.parse(c.completionDate) >= weekAgo).length

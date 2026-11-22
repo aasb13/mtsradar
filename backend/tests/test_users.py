@@ -30,6 +30,9 @@ class FakeUsers:
     async def find_one(self, query: dict[str, Any]) -> dict[str, Any] | None:
         return next((doc for doc in self.docs if self._matches(doc, query)), None)
 
+    async def count_documents(self, query: dict[str, Any]) -> int:
+        return sum(1 for doc in self.docs if self._matches(doc, query))
+
     async def update_one(self, query: dict[str, Any], update: dict[str, Any]) -> SimpleNamespace:
         doc = next((doc for doc in self.docs if self._matches(doc, query)), None)
         if doc is not None:

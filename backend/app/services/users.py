@@ -73,15 +73,17 @@ async def create_user(
     return doc
 
 
-async def publish_roster_changed() -> None:
-    """Состав пользователей изменился: публикуем актуальное число активных координаторов.
+async def publish_roster_changed(user: dict[str, Any] | None = None) -> None:
+    """Состав пользователей изменился: публикуем число активных координаторов и самого пользователя.
 
-    Счётчик живёт в шапке дашборда («Онлайн · N координаторов»); без события каждый
-    клиент показывал бы значение, посчитанное при входе, — смена роли, удаление или
-    одобрение заявки не обновили бы его до перезахода.
+    Счётчик живёт в шапке дашборда; пользователь нужен клиентам, чтобы обновить списки
+    пользователей, команды и свой профиль без перезагрузки страницы.
     """
     count = await get_db().users.count_documents({"role": Role.COORDINATOR, "deletedAt": None})
-    await rabbit.publish("user.changed", {"coordinatorCount": count})
+    payload: dict[str, Any] = {"coordinatorCount": count}
+    if user is not None:
+        payload["user"] = public_user(user)
+    await rabbit.publish("user.changed", payload)
 
 
 async def ensure_bootstrap_admin(email: str, password: str) -> None:

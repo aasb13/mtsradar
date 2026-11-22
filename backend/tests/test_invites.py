@@ -91,6 +91,9 @@ class FakeUsers:
     async def find_one(self, query: dict[str, Any]) -> dict[str, Any] | None:
         return next((doc for doc in self.docs if self._matches(doc, query)), None)
 
+    async def count_documents(self, query: dict[str, Any]) -> int:
+        return sum(1 for doc in self.docs if self._matches(doc, query))
+
     async def insert_one(self, doc: dict[str, Any]) -> None:
         if any(d["email"] == doc["email"] for d in self.docs):
             raise DuplicateKeyError("E11000 duplicate key collection: users index: email dup key")

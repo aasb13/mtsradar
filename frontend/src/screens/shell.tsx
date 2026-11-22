@@ -101,33 +101,38 @@ function SearchBox({ compact, open, onOpenChange }: { compact: boolean; open: bo
 
 function BellMenu({ onClose }: { onClose: () => void }) {
   const { state, dispatch, showToast } = useApp()
-  const [items, setItems] = useState<Notification[]>(state.notifications)
   const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  // список живёт только в глобальном store: WS и отметки прочитанным меняют его сразу
+  const items = state.notifications
 
   useEffect(() => {
+    let cancelled = false
     void (async () => {
       try {
         const res = await api.fetchNotifications()
-        setItems(res.items)
-        dispatch({ type: 'SET_NOTIFICATIONS', items: res.items, unread: res.unread })
+        if (!cancelled) dispatch({ type: 'SET_NOTIFICATIONS', items: res.items, unread: res.unread })
       } catch (err) {
         console.error('Не удалось загрузить уведомления', err)
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     })()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    return () => {
+      cancelled = true
+    }
+  }, [dispatch])
 
   const open = async (notification: Notification) => {
-    try {
-      if (notification.readAt === null) {
+    if (notification.readAt === null) {
+      dispatch({ type: 'MARK_NOTIFICATIONS_READ', ids: [notification.id] })
+      try {
         await api.markNotificationRead(notification.id)
-        const res = await api.fetchNotifications()
-        dispatch({ type: 'SET_NOTIFICATIONS', items: res.items, unread: res.unread })
+      } catch (err) {
+        console.error('Не удалось отметить уведомление', err)
+        const res = await api.fetchNotifications().catch(() => null)
+        if (res !== null) dispatch({ type: 'SET_NOTIFICATIONS', items: res.items, unread: res.unread })
       }
-    } catch (err) {
-      console.error('Не удалось отметить уведомление', err)
     }
     if (notification.incidentId !== null && notification.incidentId !== undefined) {
       onClose()
@@ -140,24 +145,26 @@ function BellMenu({ onClose }: { onClose: () => void }) {
     if (notification.body !== null && notification.body !== '') showToast(notification.body, 'info')
   }
 
+  const markAll = async () => {
+    if (busy) return
+    setBusy(true)
+    dispatch({ type: 'MARK_NOTIFICATIONS_READ', ids: null })
+    try {
+      await api.markAllNotificationsRead()
+    } catch (err) {
+      console.error('Не удалось отметить все уведомления', err)
+      const res = await api.fetchNotifications().catch(() => null)
+      if (res !== null) dispatch({ type: 'SET_NOTIFICATIONS', items: res.items, unread: res.unread })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="bell-menu">
       <div className="bell-menu__head">
         Уведомления
-        <button
-          type="button"
-          onClick={() => {
-            void (async () => {
-              try {
-                await api.markAllNotificationsRead()
-                const res = await api.fetchNotifications()
-                dispatch({ type: 'SET_NOTIFICATIONS', items: res.items, unread: res.unread })
-              } catch (err) {
-                console.error('Не удалось отметить все уведомления', err)
-              }
-            })()
-          }}
-        >
+        <button type="button" disabled={busy} onClick={() => void markAll()}>
           Прочитать все
         </button>
       </div>

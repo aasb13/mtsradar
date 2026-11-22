@@ -67,7 +67,7 @@ async def create(body: UserCreate, _: AdminUser) -> dict[str, Any]:
         user = await create_user(body.email, body.password, body.fullName, body.role, body.itsmLogin)
     except DuplicateKeyError as e:
         raise HTTPException(status.HTTP_409_CONFLICT, "Пользователь с таким email уже есть") from e
-    await publish_roster_changed()
+    await publish_roster_changed(user)
     return public_user(user)
 
 
@@ -90,8 +90,9 @@ async def update(user_id: str, body: UserUpdate, admin: AdminUser) -> dict[str, 
         res = await get_db().users.update_one({"_id": user_id, "deletedAt": None}, {"$set": upd})
         if res.matched_count == 0:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Пользователь не найден")
-        if "role" in upd:
-            await publish_roster_changed()
+        updated = await get_db().users.find_one({"_id": user_id})
+        if updated is not None:
+            await publish_roster_changed(updated)
     return await get_user(user_id, admin)
 
 
@@ -104,4 +105,6 @@ async def delete(user_id: str, admin: AdminUser) -> None:
     )
     if res.matched_count == 0:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Пользователь не найден")
-    await publish_roster_changed()
+    deleted = await get_db().users.find_one({"_id": user_id})
+    if deleted is not None:
+        await publish_roster_changed(deleted)

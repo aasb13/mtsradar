@@ -94,6 +94,9 @@
 | `incident.ai_updated` | `{incidentId, ai, card}` | обновить ИИ-блок |
 | `incident.sla` | `{incidentId, slaState, timeLeftSeconds, card}` | подсветить срок |
 | `incident.comment_added` | `{incidentId, comment}` | дописать в ленту, если карточка открыта |
+| `incident.members_changed` | `{incidentId, added[], removed[], card}` | обновить карточку (состав участников) |
+| `user.changed` | `{coordinatorCount, user}` | обновить счётчик в шапке, списки пользователей и свой профиль |
+| `team.changed` | `{}` | перечитать справочник команд |
 | `import.completed` | `{created, updated, archived, errors, warnings, ...}` | опционально тост «данные обновлены» |
 | `import.failed` | `{error}` | тост «файл с данными некорректен» |
 | `notification.created` | уведомление (см. §6) — приходит **только адресату** | тост + колокольчик +1 |

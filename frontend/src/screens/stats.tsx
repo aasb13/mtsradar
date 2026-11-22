@@ -1,10 +1,11 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { formatMinutes } from '../format'
+import { navigate } from '../router'
 import { useApp } from '../store'
-import { downloadExport, fetchTeamDescriptions, refreshTeamDescriptions } from '../api'
-import { PRIORITY_SLA_HOURS } from '../types'
-import type { TeamAiDescription } from '../types'
-import { Avatar, Button, DownloadIcon, Markdown, SeverityBadge, SparkIcon } from '../ui'
+import { downloadExport, fetchRatingLeaderboard, fetchTeamDescriptions, refreshTeamDescriptions } from '../api'
+import { PRIORITY_SLA_HOURS, ROLE_LABELS } from '../types'
+import type { RatingLeaderboardItem, TeamAiDescription } from '../types'
+import { Avatar, Button, DownloadIcon, Markdown, SeverityBadge, SparkIcon, StarRating } from '../ui'
 
 type Period = 'week' | 'month' | 'quarter'
 
@@ -59,7 +60,7 @@ function DailyChart({ points }: { points: DayPoint[] }) {
 }
 
 export function StatsPage() {
-  const { state, showToast } = useApp()
+  const { state, showToast, refreshStats } = useApp()
   const aiEnabled = state.dictionaries?.aiEnabled !== false
   const [period, setPeriod] = useState<Period>('month')
   const cards = useMemo(() => [...state.cards.values()], [state.cards])
@@ -67,6 +68,22 @@ export function StatsPage() {
   const [descriptions, setDescriptions] = useState<Record<string, TeamAiDescription>>({})
   const [aiBusy, setAiBusy] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
+  const [leaderboard, setLeaderboard] = useState<RatingLeaderboardItem[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetchRatingLeaderboard()
+        if (!cancelled) setLeaderboard(res.items)
+      } catch (err) {
+        console.error('Не удалось загрузить рейтинг сотрудников', err)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -82,6 +99,12 @@ export function StatsPage() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    const onChange = () => void refreshStats()
+    window.addEventListener('radar:incident-changed', onChange)
+    return () => window.removeEventListener('radar:incident-changed', onChange)
+  }, [refreshStats])
 
   const refreshDescriptions = async () => {
     if (aiBusy) return
@@ -407,6 +430,55 @@ export function StatsPage() {
           ))}
           {slaVsPriority.length === 0 && <p style={{ color: 'var(--text-2)' }}>Нет решённых инцидентов</p>}
         </div>
+      </div>
+
+      <div className="sectiontitle">
+        <h3>Рейтинг сотрудников</h3>
+      </div>
+      <div className="tablecard" style={{ marginBottom: 28 }}>
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Сотрудник</th>
+              <th>Роль</th>
+              <th>Команда</th>
+              <th>Оценка</th>
+              <th>Голоса</th>
+            </tr>
+          </thead>
+          <tbody>
+            {leaderboard.map(row => (
+              <tr key={row.userId} className="rowlink" onClick={() => navigate(`/profile/${row.userId}`)} title="Открыть профиль">
+                <td>
+                  <span className="memberrow">
+                    <Avatar size="sm" tone="blue" name={row.fullName} />
+                    {row.fullName}
+                  </span>
+                </td>
+                <td className="table__muted">{ROLE_LABELS[row.role]}</td>
+                <td className="table__muted">{row.team ?? '—'}</td>
+                <td>
+                  {row.average !== null ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                      <b>{row.average}</b>
+                      <StarRating value={row.average} />
+                    </span>
+                  ) : (
+                    <span className="table__muted">—</span>
+                  )}
+                </td>
+                <td>{row.count === 0 ? <span className="table__muted">—</span> : row.count}</td>
+              </tr>
+            ))}
+            {leaderboard.length === 0 && (
+              <tr>
+                <td colSpan={5} style={{ color: 'var(--text-2)' }}>
+                  Оценок пока нет — поставьте первую в профиле коллеги
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </>
   )

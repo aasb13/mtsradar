@@ -115,8 +115,7 @@ async def leaderboard(_: CurrentUser) -> dict[str, Any]:
     """Рейтинг всех сотрудников: средняя оценка и число голосов; без оценок — в конце."""
     agg = {
         row["_id"]: {"average": round(row["avg"], 2), "count": row["count"]}
-        async for row in get_db()
-        .ratings.aggregate(
+        async for row in await get_db().ratings.aggregate(
             [
                 {"$group": {"_id": "$targetUserId", "avg": {"$avg": "$score"}, "count": {"$sum": 1}}},
             ]

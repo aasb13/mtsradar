@@ -164,7 +164,7 @@ async def approve(request_id: str, body: ApproveIn, admin: AdminUser) -> dict[st
         },
     )
     await rabbit.publish("registration.decided", {"id": request_id, "status": "approved", "email": doc["email"]})
-    await publish_roster_changed()
+    await publish_roster_changed(user)
     return public_user(user)
 
 

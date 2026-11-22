@@ -619,6 +619,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         void refreshDashboard()
         void refreshBoard()
         void refreshCoordinatorCount()
+        void refreshDictionaries()
+        void refreshStats()
+        void api
+          .fetchNotifications()
+          .then(res => dispatch({ type: 'SET_NOTIFICATIONS', items: res.items, unread: res.unread }))
+          .catch(err => console.error('Не удалось обновить уведомления', err))
       },
       onEvent: (event: WsEnvelope) => {
         const payload = event.payload
@@ -848,7 +854,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if ((executor.itsmLogin ?? '') === '') {
             // без логина ITSM разработчику доступ и уведомление даёт только участие в инциденте
             try {
-              await api.addMember(card.id, executor.id)
+              const memberCard = await api.addMember(card.id, executor.id)
+              dispatch({ type: 'UPSERT_CARDS', cards: [memberCard] })
             } catch (err) {
               console.error('Не удалось добавить участника', err)
             }
@@ -857,6 +864,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         showToast(`Инцидент ${card.id} назначен команде ${team}`, 'success')
         scheduleDashboardRefresh()
+        scheduleIncidentChanged()
         return true
       } catch (err) {
         if (err instanceof ApiError) showToast(err.message, 'warning')
@@ -864,7 +872,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return false
       }
     },
-    [scheduleDashboardRefresh, showToast],
+    [scheduleDashboardRefresh, scheduleIncidentChanged, showToast],
   )
 
   const doFreeze = useCallback(
@@ -873,6 +881,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const detail = await api.freezeIncident(id, body)
         dispatch({ type: 'UPSERT_CARDS', cards: [detail] })
         scheduleDashboardRefresh()
+        scheduleIncidentChanged()
         return true
       } catch (err) {
         if (err instanceof ApiError) showToast(err.message, 'warning')
@@ -883,7 +892,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return false
       }
     },
-    [scheduleDashboardRefresh, showToast],
+    [scheduleDashboardRefresh, scheduleIncidentChanged, showToast],
   )
 
   const doUnfreeze = useCallback(
@@ -892,6 +901,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const detail = await api.unfreezeIncident(id)
         dispatch({ type: 'UPSERT_CARDS', cards: [detail] })
         scheduleDashboardRefresh()
+        scheduleIncidentChanged()
         return true
       } catch (err) {
         if (err instanceof ApiError) showToast(err.message, 'warning')
@@ -902,7 +912,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return false
       }
     },
-    [scheduleDashboardRefresh, showToast],
+    [scheduleDashboardRefresh, scheduleIncidentChanged, showToast],
   )
 
   const doRenameDictItem = useCallback(
@@ -936,6 +946,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
         }
         dispatch({ type: 'RENAME_DICT_ITEM', field, from, to })
+        scheduleIncidentChanged()
+        scheduleDictionariesRefresh()
         if (field === 'assignedGroups') {
           try {
             const users = await api.fetchUsers()
@@ -960,7 +972,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return false
       }
     },
-    [showToast, refreshDictionaries],
+    [showToast, refreshDictionaries, scheduleIncidentChanged, scheduleDictionariesRefresh],
   )
 
   // звук на новый критический (карточка стала критической и не была)

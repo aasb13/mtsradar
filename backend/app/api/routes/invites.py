@@ -121,7 +121,7 @@ async def register_by_invite(body: InviteRegisterIn) -> TokenPair:
         )
     except DuplicateKeyError as e:
         raise HTTPException(status.HTTP_409_CONFLICT, "Пользователь с такой почтой уже существует") from e
-    await publish_roster_changed()
+    await publish_roster_changed(user)
     # токен сжигается только после успешного создания аккаунта: ошибка формы не должна
     # убивать ссылку, повтор под ту же почту всё равно блокирует уникальный индекс
     await get_redis().getdel(_key(body.token))

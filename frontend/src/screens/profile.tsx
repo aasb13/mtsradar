@@ -79,62 +79,102 @@ export function ProfilePage({ userId }: { userId?: string }) {
   const [tasksLoading, setTasksLoading] = useState(true)
   const [includeResolved, setIncludeResolved] = useState(false)
   const [retryKey, setRetryKey] = useState(0)
+  const [ratings, setRatings] = useState<RatingsResponse | null>(null)
+  const [ratingScore, setRatingScore] = useState(0)
+  const [ratingComment, setRatingComment] = useState('')
+  const [ratingAnonymous, setRatingAnonymous] = useState(false)
+  const [ratingBusy, setRatingBusy] = useState(false)
 
   // свой профиль /profile; /profile/<id> — чужой, только просмотр
   const isSelf = userId === undefined || userId === (user?.id ?? '')
 
+  const loadMe = async () => {
+    setMeError(false)
+    try {
+      const m = await fetchMe()
+      const s = m.notificationSettings
+      setMe(m)
+      setName(m.fullName ?? '')
+      setChannels({ inApp: s.inApp, push: s.push, telegram: s.telegram, email: s.email })
+      setKinds(Object.fromEntries(Object.keys(m.notificationKinds).map(k => [k, s.kinds[k] ?? true])))
+      setSavedSettings(s)
+    } catch (err) {
+      console.error('Не удалось загрузить профиль', err)
+      setMeError(true)
+    }
+  }
+
   useEffect(() => {
     if (!isSelf) return
-    setMeError(false)
-    void (async () => {
-      try {
-        const m = await fetchMe()
-        const s = m.notificationSettings
-        setMe(m)
-        setName(m.fullName ?? '')
-        setChannels({ inApp: s.inApp, push: s.push, telegram: s.telegram, email: s.email })
-        setKinds(Object.fromEntries(Object.keys(m.notificationKinds).map(k => [k, s.kinds[k] ?? true])))
-        setSavedSettings(s)
-      } catch (err) {
-        console.error('Не удалось загрузить профиль', err)
-        setMeError(true)
-      }
-    })()
+    void loadMe()
+    const onChange = () => void loadMe()
+    window.addEventListener('radar:users-changed', onChange)
+    return () => window.removeEventListener('radar:users-changed', onChange)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSelf, retryKey])
+
+  const loadOther = async () => {
+    setOtherError(false)
+    try {
+      setOther(await fetchUser(userId as string))
+    } catch (err) {
+      console.error('Не удалось загрузить профиль пользователя', err)
+      setOtherError(true)
+    }
+  }
 
   useEffect(() => {
     if (isSelf || userId === undefined) return
     setOther(null)
-    setOtherError(false)
-    void (async () => {
-      try {
-        setOther(await fetchUser(userId))
-      } catch (err) {
-        console.error('Не удалось загрузить профиль пользователя', err)
-        setOtherError(true)
-      }
-    })()
+    void loadOther()
+    const onChange = (e: Event) => {
+      const updated = (e as CustomEvent<User>).detail
+      if (updated === undefined || updated.id === userId) void loadOther()
+    }
+    window.addEventListener('radar:users-changed', onChange)
+    return () => window.removeEventListener('radar:users-changed', onChange)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSelf, userId, retryKey])
 
   // карточки задач кладём и в общий store: панель инцидента открывается только по карточке из state.cards
   const tasksUserId = isSelf ? '' : (other?.id ?? '')
-  useEffect(() => {
+  const loadTasks = async () => {
     if (!isSelf && tasksUserId === '') return
+    setTasksLoading(true)
+    try {
+      const res = isSelf ? await fetchMyTasks(includeResolved) : await fetchUserTasks(tasksUserId, includeResolved)
+      setTasks(res.items)
+      dispatch({ type: 'UPSERT_CARDS', cards: res.items })
+    } catch (err) {
+      console.error('Не удалось загрузить задачи', err)
+      showToast(isSelf ? 'Не удалось загрузить ваши задачи' : 'Не удалось загрузить задачи пользователя', 'warning')
+    } finally {
+      setTasksLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadTasks()
+    const onChange = () => void loadTasks()
+    window.addEventListener('radar:incident-changed', onChange)
+    return () => window.removeEventListener('radar:incident-changed', onChange)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [includeResolved, isSelf, tasksUserId])
+
+  // отзывы о пользователе; свой рейтинг — тоже по id, чтобы работало после правки имени
+  const ratingsUserId = other?.id ?? (isSelf ? (user?.id ?? '') : '')
+  useEffect(() => {
+    if (ratingsUserId === '') return
     void (async () => {
-      setTasksLoading(true)
       try {
-        const res = isSelf ? await fetchMyTasks(includeResolved) : await fetchUserTasks(tasksUserId, includeResolved)
-        setTasks(res.items)
-        dispatch({ type: 'UPSERT_CARDS', cards: res.items })
+        setRatings(await fetchUserRatings(ratingsUserId))
       } catch (err) {
-        console.error('Не удалось загрузить задачи', err)
-        showToast(isSelf ? 'Не удалось загрузить ваши задачи' : 'Не удалось загрузить задачи пользователя', 'warning')
-      } finally {
-        setTasksLoading(false)
+        console.error('Не удалось загрузить оценки', err)
+        showToast(isSelf ? 'Не удалось загрузить ваши оценки' : 'Не удалось загрузить оценки пользователя', 'warning')
       }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [includeResolved, isSelf, tasksUserId])
+  }, [isSelf, ratingsUserId, retryKey])
 
   const retryProfile = () => {
     setMeError(false)
@@ -266,6 +306,35 @@ export function ProfilePage({ userId }: { userId?: string }) {
     navigate(user.role === 'developer' ? '/dev' : '/qa')
   }
 
+  const submitRating = async () => {
+    if (ratingScore === 0) {
+      showToast('Выберите оценку — звёзды от 1 до 5', 'warning')
+      return
+    }
+    setRatingBusy(true)
+    try {
+      setRatings(
+        await rateUser(profileUser.id, {
+          score: ratingScore,
+          comment: ratingComment.trim() === '' ? undefined : ratingComment.trim(),
+          anonymous: ratingAnonymous,
+        }),
+      )
+      setRatingScore(0)
+      setRatingComment('')
+      setRatingAnonymous(false)
+      showToast('Оценка отправлена — коллега получит уведомление', 'success')
+    } catch (err) {
+      if (err instanceof ApiError) showToast(err.message, 'warning')
+      else {
+        console.error('Не удалось отправить оценку', err)
+        showToast('Не удалось отправить оценку: сервер недоступен', 'critical')
+      }
+    } finally {
+      setRatingBusy(false)
+    }
+  }
+
   const tgLinked = profileUser.telegramChatId !== null && profileUser.telegramChatId !== ''
   const nameUnchanged = name.trim() === '' || name.trim() === (me?.fullName ?? '')
 
@@ -281,6 +350,95 @@ export function ProfilePage({ userId }: { userId?: string }) {
         <EmptyState title="Задач нет" note={includeResolved ? undefined : 'Новые назначения появятся здесь и придут уведомлением'} />
       ) : (
         tasks.map(card => <TaskRow key={card.id} card={card} onClick={() => openTask(card)} />)
+      )}
+    </div>
+  )
+
+  const ratingsCard = (
+    <div className="profilecard">
+      <h3>{isSelf ? 'Мой рейтинг' : 'Рейтинг'}</h3>
+      <p className="profilecard__sub">
+        {isSelf
+          ? 'Оценки и отзывы коллег о вашей работе'
+          : 'Оценки коллег: у открытых отзывов виден автор, анонимные — без имени'}
+      </p>
+      {ratings === null ? (
+        <Loading />
+      ) : (
+        <>
+          <div className="ratingsummary">
+            {ratings.average !== null ? (
+              <>
+                <span className="ratingsummary__value">{ratings.average}</span>
+                <StarRating value={ratings.average} size={18} />
+              </>
+            ) : (
+              <span style={{ color: 'var(--text-2)', fontSize: 14 }}>Оценок пока нет</span>
+            )}
+            <span className="ratingsummary__count">
+              {ratings.count} {pluralize(ratings.count, 'оценка', 'оценки', 'оценок')}
+            </span>
+          </div>
+
+          {!isSelf && (
+            <div className="ratingform">
+              <p className="listlabel" style={{ marginTop: 0 }}>Оставить оценку</p>
+              <StarPicker value={ratingScore} onChange={setRatingScore} />
+              <Field label="Комментарий" hint={`${ratingComment.length}/1000`}>
+                <Textarea
+                  maxLength={1000}
+                  value={ratingComment}
+                  placeholder="Что получилось и что стоит улучшить"
+                  onChange={e => setRatingComment(e.target.value)}
+                />
+              </Field>
+              <CheckRow
+                on={ratingAnonymous}
+                label="Анонимно — автор отзыва не будет показан"
+                onToggle={() => setRatingAnonymous(v => !v)}
+              />
+              <div className="profileformfoot">
+                <span className="spacer" />
+                <Button variant="primary" disabled={ratingBusy || ratingScore === 0} onClick={() => void submitRating()}>
+                  Оценить
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {ratings.items.length > 0 && (
+            <div className="reviewlist">
+              <p className="listlabel">Отзывы · {ratings.items.length}</p>
+              {ratings.items.map(r => {
+                const author = r.author
+                return (
+                  <div key={r.id} className="reviewrow">
+                    <div className="reviewrow__head">
+                      {author === null ? (
+                        <span className="reviewrow__anon">Анонимный отзыв</span>
+                      ) : (
+                        <a
+                          className="reviewrow__author"
+                          href={`/profile/${author.id}`}
+                          title="Открыть профиль"
+                          onClick={e => {
+                            e.preventDefault()
+                            navigate(`/profile/${author.id}`)
+                          }}
+                        >
+                          {author.name}
+                        </a>
+                      )}
+                      <StarRating value={r.score} />
+                      <span className="reviewrow__date">{relativeTime(r.createdAt, state.now)}</span>
+                    </div>
+                    {r.comment !== '' && <p className="reviewrow__text">{r.comment}</p>}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </>
       )}
     </div>
   )
@@ -303,6 +461,13 @@ export function ProfilePage({ userId }: { userId?: string }) {
           <p className="profilehead__mail">{profileUser.email}</p>
           <div className="profilehead__tags">
             <span className="tag">{ROLE_LABELS[profileUser.role]}</span>
+            <span className="tag">
+              {ratings === null
+                ? '—'
+                : ratings.count === 0
+                  ? 'Оценок пока нет'
+                  : `★ ${ratings.average} · ${ratings.count} ${pluralize(ratings.count, 'оценка', 'оценки', 'оценок')}`}
+            </span>
             <span className="tag">{tgLinked ? 'Telegram подключён' : 'Telegram не подключён'}</span>
           </div>
         </div>
@@ -328,7 +493,10 @@ export function ProfilePage({ userId }: { userId?: string }) {
 
       {isSelf ? (
         <div className="split">
-          {tasksCard}
+          <div className="profilestack">
+            {tasksCard}
+            {ratingsCard}
+          </div>
 
           <div className="profilestack">
             <div className="profilecard">
@@ -410,7 +578,10 @@ export function ProfilePage({ userId }: { userId?: string }) {
           </div>
         </div>
       ) : (
-        tasksCard
+        <div className="profilestack">
+          {tasksCard}
+          {ratingsCard}
+        </div>
       )}
     </>
   )

@@ -5,6 +5,7 @@
 
 import type {
   BoardResponse,
+  Card,
   ChatActionTrace,
   ChatMessage,
   ChatSession,
@@ -272,8 +273,8 @@ export function transitionIncident(
   return request<IncidentDetail>(`/incidents/${encodeURIComponent(id)}/transition`, { method: 'POST', body })
 }
 
-export function ackIncident(id: string): Promise<unknown> {
-  return request<unknown>(`/incidents/${encodeURIComponent(id)}/ack`, { method: 'POST' })
+export function ackIncident(id: string): Promise<Card> {
+  return request<Card>(`/incidents/${encodeURIComponent(id)}/ack`, { method: 'POST' })
 }
 
 /** Заморозка SLA: пауза таймера и алертов до разморозки (вручную или по расписанию). */
@@ -309,8 +310,8 @@ export function addComment(id: string, text: string): Promise<Comment> {
   return request<Comment>(`/incidents/${encodeURIComponent(id)}/comments`, { method: 'POST', body: { text } })
 }
 
-export function addMember(id: string, userId: string): Promise<unknown> {
-  return request<unknown>(`/incidents/${encodeURIComponent(id)}/members`, { method: 'POST', body: { userId } })
+export function addMember(id: string, userId: string): Promise<Card> {
+  return request<Card>(`/incidents/${encodeURIComponent(id)}/members`, { method: 'POST', body: { userId } })
 }
 
 export function requestAiRefresh(id: string): Promise<void> {
