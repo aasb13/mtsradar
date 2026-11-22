@@ -105,6 +105,42 @@ export function Avatar({ name, size = 'md', tone = 'blue' }: { name?: string | n
   return <span className={`avatar avatar--${size} avatar--${tone}`}>{initials(name)}</span>
 }
 
+// ---------------- звёзды рейтинга ----------------
+
+export function StarRating({ value, size = 15 }: { value: number; size?: number }) {
+  return (
+    <span className="stars" title={`${value} из 5`}>
+      {[1, 2, 3, 4, 5].map(i => (
+        <span key={i} className={`stars__star ${i <= Math.round(value) ? 'stars__star--on' : ''}`}>
+          <StarIcon size={size} />
+        </span>
+      ))}
+    </span>
+  )
+}
+
+export function StarPicker({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const [hover, setHover] = useState(0)
+  const shown = hover || value
+  return (
+    <span className="stars stars--pick">
+      {[1, 2, 3, 4, 5].map(i => (
+        <button
+          key={i}
+          type="button"
+          className={`stars__star ${i <= shown ? 'stars__star--on' : ''}`}
+          onMouseEnter={() => setHover(i)}
+          onMouseLeave={() => setHover(0)}
+          onClick={() => onChange(i)}
+          aria-label={`${i} из 5`}
+        >
+          <StarIcon size={24} />
+        </button>
+      ))}
+    </span>
+  )
+}
+
 // ---------------- поля формы ----------------
 
 export function Field({ label, hint, error, children }: { label: string; hint?: string; error?: string | null; children: ReactNode }) {

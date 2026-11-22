@@ -14,6 +14,7 @@ import { AssignModal, FreezeModal, IncidentPanel } from './screens/panel'
 import { navigate, useRoute } from './router'
 import type { Role } from './types'
 import { Loading } from './ui'
+import { ErrorScreen } from './screens/error'
 
 const HOME_BY_ROLE: Record<Role, string> = {
   coordinator: '/',
@@ -75,7 +76,9 @@ function Screens() {
   const isStaff = user.role === 'coordinator' || user.role === 'admin'
 
   let screen: ReactNode
-  if (route === '/profile' || route.startsWith('/profile/')) {
+  if (user.role !== 'admin' && (route === '/admin' || route.startsWith('/admin/'))) {
+    screen = <ErrorScreen code={403} />
+  } else if (route === '/profile' || route.startsWith('/profile/')) {
     // /profile — свой профиль с настройками; /profile/<id> — чужой, только просмотр
     const otherId = route === '/profile' ? undefined : route.slice('/profile/'.length)
     screen = <ProfilePage userId={otherId === '' ? undefined : otherId} />
@@ -115,14 +118,7 @@ function Screens() {
       screen = <QaPage />
       break
     default:
-      screen =
-        user.role === 'developer' ? (
-          <DevPage />
-        ) : user.role === 'viewer' ? (
-          <QaPage />
-        ) : (
-          <KanbanPage />
-        )
+      screen = <ErrorScreen code={404} />
   }
 
   return (

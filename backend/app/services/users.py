@@ -19,6 +19,7 @@ NOTIFICATION_KINDS = {
     "sla.danger": "Срок решения скоро истечёт",
     "sla.breached": "Срок решения нарушен",
     "registration.requested": "Новая заявка на регистрацию",
+    "rating.received": "Вас оценили (рейтинг сотрудников)",
 }
 
 
@@ -110,6 +111,13 @@ async def developers_for(kind: str, *, logins: list[str] = (), user_ids: list[st
     if not ors:
         return []
     return await _filter_by_kind(get_db().users.find({"deletedAt": None, "role": Role.DEVELOPER, "$or": ors}), kind)
+
+
+async def users_by_ids_for(kind: str, user_ids: list[str]) -> list[dict[str, Any]]:
+    """Получатели по id в любой роли (например, рейтинг можно получить и координатору)."""
+    if not user_ids:
+        return []
+    return await _filter_by_kind(get_db().users.find({"deletedAt": None, "_id": {"$in": list(user_ids)}}), kind)
 
 
 async def _filter_by_kind(cursor, kind: str) -> list[dict[str, Any]]:

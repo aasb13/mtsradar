@@ -665,4 +665,17 @@ button,
   .pagehead h1 {
     font-size: 22px;
   }
+
+  .err__mark {
+    width: 104px;
+    height: 104px;
+  }
+
+  .err__code {
+    font-size: 34px;
+  }
+
+  .err__title {
+    font-size: 23px;
+  }
 }

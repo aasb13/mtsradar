@@ -16,7 +16,7 @@ from app.db.mongo import get_db
 from app.domain.enums import Group
 from app.services import push, telegram
 from app.services.presenter import public
-from app.services.users import admins_for, developers_for, recipients
+from app.services.users import admins_for, developers_for, recipients, users_by_ids_for
 
 log = logging.getLogger(__name__)
 
@@ -111,6 +111,8 @@ async def deliver(notification: dict[str, Any], card: dict[str, Any] | None) -> 
     audience = notification.pop("audience", None)
     if audience and audience.get("admins"):
         users = await admins_for(notification["kind"])
+    elif audience and audience.get("anyUsers"):
+        users = await users_by_ids_for(notification["kind"], audience["anyUsers"])
     elif audience:
         users = await developers_for(
             notification["kind"], logins=audience.get("logins", []), user_ids=audience.get("userIds", [])

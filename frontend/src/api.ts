@@ -22,6 +22,8 @@ import type {
   MyIncidentsResponse,
   MyTasksResponse,
   NotificationsResponse,
+  RatingLeaderboardResponse,
+  RatingsResponse,
   RegistrationRequest,
   StatsResponse,
   TeamDescriptionsResponse,
@@ -597,6 +599,23 @@ export function fetchMyTasks(includeResolved = false): Promise<MyTasksResponse> 
 /** Задачи другого пользователя (чужой профиль, доступно сотрудникам). */
 export function fetchUserTasks(id: string, includeResolved = false): Promise<MyTasksResponse> {
   return request<MyTasksResponse>(`/users/${encodeURIComponent(id)}/tasks${includeResolved ? '?includeResolved=true' : ''}`)
+}
+
+// ---------------- рейтинги сотрудников ----------------
+
+export function fetchUserRatings(id: string): Promise<RatingsResponse> {
+  return request<RatingsResponse>(`/users/${encodeURIComponent(id)}/ratings`)
+}
+
+export function rateUser(
+  id: string,
+  body: { score: number; comment?: string; anonymous?: boolean },
+): Promise<RatingsResponse> {
+  return request<RatingsResponse>(`/users/${encodeURIComponent(id)}/ratings`, { method: 'POST', body })
+}
+
+export function fetchRatingLeaderboard(): Promise<RatingLeaderboardResponse> {
+  return request<RatingLeaderboardResponse>('/ratings/leaderboard')
 }
 
 /** Отвязать Telegram-уведомления (кнопка в профиле). */

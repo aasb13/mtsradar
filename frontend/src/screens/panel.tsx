@@ -303,9 +303,9 @@ export function IncidentPanel() {
               <span className="bigdad__icon">
                 <SparkIcon size={17} />
               </span>
-              <div>
+              <div className="bigdad__headtext">
                 <p className="bigdad__title">BigDad · ИИ-ассистент</p>
-                <p className="bigdad__sub">обновлено {relativeTime(card.updatedAt, state.now)}</p>
+                <p className="bigdad__sub">анализ инцидента · обновлено {relativeTime(card.updatedAt, state.now)}</p>
               </div>
               <button
                 type="button"

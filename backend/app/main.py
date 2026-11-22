@@ -25,6 +25,7 @@ from app.api.routes import (
     meta,
     my,
     notifications,
+    ratings,
     registration,
     teams,
     tg,
@@ -115,6 +116,7 @@ for r in (
     ws.router,
     tg.api_router,
     my.router,
+    ratings.router,
 ):
     app.include_router(r, prefix=API)
 app.include_router(tg.page_router)  # мини-апп Telegram: /tg/app

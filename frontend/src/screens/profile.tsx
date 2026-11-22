@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { ApiError, fetchMe, fetchMyTasks, fetchUser, fetchUserTasks, patchMe, unlinkTelegram } from '../api'
-import { formatDayMonth } from '../format'
+import { ApiError, fetchMe, fetchMyTasks, fetchUser, fetchUserRatings, fetchUserTasks, patchMe, rateUser, unlinkTelegram } from '../api'
+import { formatDayMonth, pluralize, relativeTime } from '../format'
 import { navigate } from '../router'
+import { ErrorScreen } from './error'
 import { useApp } from '../store'
 import { ROLE_LABELS } from '../types'
-import type { Card, MeResponse, NotificationSettings, Role, User } from '../types'
-import { Avatar, Button, CheckIcon, EmptyState, Field, Input, Loading, SeverityBadge, SlaChip, StatusPill } from '../ui'
+import type { Card, MeResponse, NotificationSettings, RatingsResponse, Role, User } from '../types'
+import { Avatar, Button, CheckIcon, EmptyState, Field, Input, Loading, SeverityBadge, SlaChip, StarPicker, StarRating, StatusPill, Textarea } from '../ui'
 
 const TASKS_NOTE: Record<Role, string> = {
   developer: 'Инциденты, где он исполнитель в ITSM или добавлен участником',
@@ -77,12 +78,14 @@ export function ProfilePage({ userId }: { userId?: string }) {
   const [tasks, setTasks] = useState<Card[]>([])
   const [tasksLoading, setTasksLoading] = useState(true)
   const [includeResolved, setIncludeResolved] = useState(false)
+  const [retryKey, setRetryKey] = useState(0)
 
   // свой профиль /profile; /profile/<id> — чужой, только просмотр
   const isSelf = userId === undefined || userId === (user?.id ?? '')
 
   useEffect(() => {
     if (!isSelf) return
+    setMeError(false)
     void (async () => {
       try {
         const m = await fetchMe()
@@ -97,7 +100,7 @@ export function ProfilePage({ userId }: { userId?: string }) {
         setMeError(true)
       }
     })()
-  }, [isSelf])
+  }, [isSelf, retryKey])
 
   useEffect(() => {
     if (isSelf || userId === undefined) return
@@ -111,7 +114,7 @@ export function ProfilePage({ userId }: { userId?: string }) {
         setOtherError(true)
       }
     })()
-  }, [isSelf, userId])
+  }, [isSelf, userId, retryKey])
 
   // карточки задач кладём и в общий store: панель инцидента открывается только по карточке из state.cards
   const tasksUserId = isSelf ? '' : (other?.id ?? '')
@@ -133,15 +136,23 @@ export function ProfilePage({ userId }: { userId?: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [includeResolved, isSelf, tasksUserId])
 
+  const retryProfile = () => {
+    setMeError(false)
+    setOtherError(false)
+    setRetryKey(key => key + 1)
+  }
+
   if (user === null) return null
 
   const profileUser: User | null = isSelf ? me : other
   if (profileUser === null) {
     const error = isSelf ? meError : otherError
     return error ? (
-      <p style={{ paddingTop: 40 }}>
-        {isSelf ? 'Не удалось загрузить профиль — обновите страницу' : 'Профиль не найден — пользователь заблокирован или удалён'}
-      </p>
+      isSelf ? (
+        <ErrorScreen code={500} text="Не удалось загрузить профиль." onRetry={retryProfile} />
+      ) : (
+        <ErrorScreen code={404} text="Профиль не найден — пользователь заблокирован или удалён." />
+      )
     ) : (
       <Loading style={{ paddingTop: 40 }} />
     )

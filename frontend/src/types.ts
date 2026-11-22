@@ -324,6 +324,37 @@ export interface MyTasksResponse {
   items: Card[]
 }
 
+/** Оценка сотрудника: 1–5 звёзд с комментарием; автор скрыт у анонимных отзывов. */
+export interface RatingItem {
+  id: string
+  score: number
+  comment: string
+  createdAt: string
+  anonymous: boolean
+  author: { id: string; name: string } | null
+}
+
+export interface RatingsResponse {
+  userId: string
+  average: number | null
+  count: number
+  distribution: Record<string, number>
+  items: RatingItem[]
+}
+
+export interface RatingLeaderboardItem {
+  userId: string
+  fullName: string
+  role: Role
+  team: string | null
+  average: number | null
+  count: number
+}
+
+export interface RatingLeaderboardResponse {
+  items: RatingLeaderboardItem[]
+}
+
 // ---------------- чат с ИИ-агентом BigDad ----------------
 
 export interface ChatAttachment {

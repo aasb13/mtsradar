@@ -376,7 +376,11 @@ export function ChatPage() {
     <div className="chat">
       <aside className="chat__side">
         <div className="chat__sidehead">
-          <Button variant="primary" className="btn--sm" onClick={newSession}>
+          <div className="chat__sidetitle">
+            <span>Беседы</span>
+            <span className="chat__sidecount">{sessions.length}</span>
+          </div>
+          <Button variant="primary" className="btn--sm chat__new" onClick={newSession}>
             <PlusIcon size={14} />
             Новый чат
           </Button>
@@ -411,6 +415,19 @@ export function ChatPage() {
       </aside>
 
       <section className="chat__main">
+        <header className="chat__header">
+          <span className="chat__header-icon">
+            <SparkIcon size={18} />
+          </span>
+          <div className="chat__header-text">
+            <h2>BigDad</h2>
+            <p>ИИ-координатор: разбирает инциденты и подсказывает действия</p>
+          </div>
+          <span className={`chat__status ${aiEnabled ? '' : 'chat__status--off'}`}>
+            <i />
+            {aiEnabled ? 'на связи' : 'не подключён'}
+          </span>
+        </header>
         <div className="chat__feed" ref={feedRef} onScroll={onFeedScroll}>
           {messages.length === 0 && !waiting && (
             <div className="chat__placeholder">
@@ -426,6 +443,7 @@ export function ChatPage() {
               Чат об инциденте {activeSession.incidentId}
             </div>
           )}
+          {messages.length > 0 && <div className="chat__day"><span>Сегодня</span></div>}
           {messages.map(m => (
             <MessageRow key={m.id} message={m} now={state.now} onReply={setReplyTo} />
           ))}
@@ -538,6 +556,7 @@ export function ChatPage() {
               Отправить
             </Button>
           </div>
+          <p className="chat__hint">Enter — отправить · Shift + Enter — новая строка · до 5 файлов</p>
         </div>
       </section>
       {deleting !== null && (

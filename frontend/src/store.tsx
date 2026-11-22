@@ -168,7 +168,9 @@ export type Action =
   | { type: 'SET_THEME'; theme: Theme }
   | { type: 'SET_FILTERS'; patch: Partial<State['filters']> }
   | { type: 'SET_NOTIFICATIONS'; items: Notification[]; unread: number }
+  | { type: 'MARK_NOTIFICATIONS_READ'; ids: string[] | null }
   | { type: 'ADD_NOTIFICATION'; notification: Notification }
+  | { type: 'ACK_CRITICAL'; id: string }
   | { type: 'SET_PENDING_REQUEST'; request: RegistrationRequest | null }
   | { type: 'ADD_TOAST'; toast: ToastItem }
   | { type: 'DISMISS_TOAST'; key: string }
@@ -305,6 +307,19 @@ function reducer(state: State, action: Action): State {
       return { ...state, filters: { ...state.filters, ...action.patch } }
     case 'SET_NOTIFICATIONS':
       return { ...state, notifications: action.items, unread: action.unread }
+    case 'MARK_NOTIFICATIONS_READ': {
+      const ids = action.ids === null ? null : new Set(action.ids)
+      const at = new Date().toISOString()
+      const notifications = state.notifications.map(n =>
+        n.readAt === null && (ids === null || ids.has(n.id)) ? { ...n, readAt: at } : n,
+      )
+      // сервер считает unread по всей коллекции, список в памяти ограничен 50 записями
+      const markedVisible = state.notifications.filter(n => n.readAt === null && (ids === null || ids.has(n.id))).length
+      const unread = ids === null ? 0 : Math.max(0, state.unread - markedVisible)
+      return { ...state, notifications, unread }
+    }
+    case 'ACK_CRITICAL':
+      return { ...state, unacknowledgedCritical: state.unacknowledgedCritical.filter(id => id !== action.id) }
     case 'ADD_NOTIFICATION':
       return {
         ...state,
@@ -505,6 +520,46 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }, DASHBOARD_REFRESH_DEBOUNCE_MS)
   }, [refreshDashboard])
 
+  // Один общий сигнал об изменении инцидентов: экраны с локальными списками
+  // перезагружают свои данные, не имея собственной подписки на WebSocket.
+  const incidentChangedTimer = useRef<number | null>(null)
+  const scheduleIncidentChanged = useCallback(() => {
+    if (incidentChangedTimer.current !== null) return
+    incidentChangedTimer.current = window.setTimeout(() => {
+      incidentChangedTimer.current = null
+      window.dispatchEvent(new CustomEvent('radar:incident-changed'))
+    }, 250)
+  }, [])
+
+  // справочник продуктов/команд выводится из инцидентов на сервере
+  const dictionariesTimer = useRef<number | null>(null)
+  const scheduleDictionariesRefresh = useCallback(() => {
+    if (dictionariesTimer.current !== null) return
+    dictionariesTimer.current = window.setTimeout(() => {
+      dictionariesTimer.current = null
+      void refreshDictionaries()
+    }, 300)
+  }, [refreshDictionaries])
+
+  const statsTimer = useRef<number | null>(null)
+  const scheduleStatsRefresh = useCallback(() => {
+    if (statsTimer.current !== null) return
+    statsTimer.current = window.setTimeout(() => {
+      statsTimer.current = null
+      void refreshStats()
+    }, 800)
+  }, [refreshStats])
+
+  useEffect(
+    () => () => {
+      if (incidentChangedTimer.current !== null) window.clearTimeout(incidentChangedTimer.current)
+      if (dictionariesTimer.current !== null) window.clearTimeout(dictionariesTimer.current)
+      if (statsTimer.current !== null) window.clearTimeout(statsTimer.current)
+      if (dashboardTimer.current !== null) window.clearTimeout(dashboardTimer.current)
+    },
+    [],
+  )
+
   const boot = useCallback(
     async (user: User) => {
       dispatch({ type: 'AUTH_SUCCESS', user })
@@ -567,6 +622,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       },
       onEvent: (event: WsEnvelope) => {
         const payload = event.payload
+        if (event.type.startsWith('incident.') && event.type !== 'incident.comment_added') {
+          scheduleIncidentChanged()
+        }
         switch (event.type) {
           case 'incident.created':
           case 'incident.updated':
@@ -578,11 +636,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
               dispatch({ type: 'UPSERT_CARDS', cards: [card] })
               scheduleDashboardRefresh()
             }
+            if (event.type === 'incident.created' || event.type === 'incident.updated') {
+              scheduleDictionariesRefresh()
+            }
             if (event.type === 'incident.created') {
               showToast(`${card?.id ?? ''} — ${FEED_TEXT[event.type] ?? 'событие'}`, 'info', card?.id)
             }
             if (event.type === 'incident.ai_updated') {
               showToast('BigDad обновил анализ инцидента', 'info', card?.id)
+              window.dispatchEvent(
+                new CustomEvent('radar:incident-ai', {
+                  detail: { incidentId: String(payload.incidentId ?? card?.id ?? ''), ai: payload.ai ?? null },
+                }),
+              )
             }
             break
           }
@@ -600,6 +666,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
               showToast(`${id} разморожен по расписанию`, 'info', id)
             } else {
               showToast(`${id} разморожен`, 'info', id)
+            }
+            break
+          }
+          case 'incident.members_changed': {
+            const card = cardFrom(payload.card)
+            if (card !== null) {
+              dispatch({ type: 'UPSERT_CARDS', cards: [card] })
+              scheduleDashboardRefresh()
             }
             break
           }
@@ -635,6 +709,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
             if (typeof count === 'number' && Number.isFinite(count)) {
               dispatch({ type: 'SET_COORDINATOR_COUNT', count })
             }
+            const changed = payload.user
+            if (typeof changed === 'object' && changed !== null && typeof (changed as User).id === 'string') {
+              const updated = changed as User
+              if (stateRef.current.user?.id === updated.id) {
+                dispatch({ type: 'SET_USER', user: { ...stateRef.current.user, ...updated } })
+              }
+              window.dispatchEvent(new CustomEvent('radar:users-changed', { detail: updated }))
+            }
             break
           }
           case 'team.changed':
@@ -649,7 +731,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             showToast('Данные обновлены из файла инцидентов', 'success')
             void refreshBoard()
             scheduleDashboardRefresh()
-            void refreshStats()
+            scheduleDictionariesRefresh()
+            scheduleStatsRefresh()
             break
           case 'import.failed':
             showToast('Не удалось импортировать данные файла', 'critical')
@@ -660,7 +743,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       },
     })
     return dispose
-  }, [user, refreshDashboard, refreshBoard, refreshStats, refreshDictionaries, scheduleDashboardRefresh, refreshCoordinatorCount, showToast])
+  }, [user, refreshDashboard, refreshBoard, refreshStats, refreshDictionaries, refreshCoordinatorCount, scheduleDashboardRefresh, scheduleIncidentChanged, scheduleDictionariesRefresh, scheduleStatsRefresh, showToast])
 
   const loginWithPair = useCallback(
     async (pair: TokenPair, remember = true) => {
@@ -708,6 +791,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const detail: IncidentDetail = await api.transitionIncident(card.id, { toStateId, ...extra })
         dispatch({ type: 'UPSERT_CARDS', cards: [detail] })
         scheduleDashboardRefresh()
+        scheduleIncidentChanged()
         return true
       } catch (err) {
         if (err instanceof ApiError) {
@@ -719,20 +803,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return false
       }
     },
-    [scheduleDashboardRefresh, showToast],
+    [scheduleDashboardRefresh, scheduleIncidentChanged, showToast],
   )
 
   const doAck = useCallback(
     async (id: string) => {
       try {
-        await api.ackIncident(id)
+        const card = await api.ackIncident(id)
+        dispatch({ type: 'UPSERT_CARDS', cards: [card] })
+        dispatch({ type: 'ACK_CRITICAL', id })
         scheduleDashboardRefresh()
+        scheduleIncidentChanged()
       } catch (err) {
         if (err instanceof ApiError) showToast(err.message, 'warning')
         else showToast('Не удалось принять инцидент', 'critical')
       }
     },
-    [scheduleDashboardRefresh, showToast],
+    [scheduleDashboardRefresh, scheduleIncidentChanged, showToast],
   )
 
   const doAssign = useCallback(
