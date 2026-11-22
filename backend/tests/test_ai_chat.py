@@ -1,7 +1,8 @@
-"""Чат-агент: стрим-цикл с инструментами, след вызовов, матрица прав — с подменным LLM, без Mongo."""
+"""Чат-агент: стрим-цикл с инструментами, след вызовов, матрица прав — подменные LLM и Mongo."""
 
 import json
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import pytest
 
@@ -257,7 +258,13 @@ def test_tool_sets_match_permissions():
     viewer = [t.name for t in chat_tools(make_ctx("viewer"))]
     assert not write_names & set(viewer) and "add_comment" in viewer  # только то, что реально исполнимо
     developer = [t.name for t in chat_tools(make_ctx("developer"))]
-    assert set(developer) == {"search_incidents", "get_incident", "dashboard_summary"}
+    assert set(developer) == {
+        "search_incidents",
+        "get_incident",
+        "dashboard_summary",
+        "ratings_leaderboard",  # leaderboard в REST открыт любому пользователю
+        "get_user_ratings",  # чужие оценки инструмент отклонит по правам GET /users/{id}/ratings
+    }
 
 
 async def test_write_tool_denied_for_viewer_before_touching_data():
@@ -276,6 +283,136 @@ async def test_comment_tool_denied_for_developer():
     tool = action_tools(make_ctx("developer"))["add_comment"]
     res = await tool.handler({"incident_id": "INC1", "text": "привет"})
     assert "Недостаточно прав" in res["error"]
+
+
+# ---------------- инструменты оценок (подменная Mongo) ----------------
+
+RATER = {"_id": "u2", "fullName": "Оценщик", "email": "rater@mts.ru", "role": "coordinator", "deletedAt": None}
+RATINGS_DOCS = [
+    {
+        "_id": "r1",
+        "targetUserId": "u1",
+        "authorUserId": "u2",
+        "score": 5,
+        "comment": "Быстро помог",
+        "anonymous": False,
+        "createdAt": datetime(2026, 11, 1, tzinfo=UTC),
+    },
+    {
+        "_id": "r2",
+        "targetUserId": "u1",
+        "authorUserId": "u2",
+        "score": 4,
+        "comment": "",
+        "anonymous": True,
+        "createdAt": datetime(2026, 11, 10, tzinfo=UTC),
+    },
+]
+
+
+def _matches(doc: dict, query: dict) -> bool:
+    for field, expected in query.items():
+        if isinstance(expected, dict) and "$in" in expected:
+            if doc.get(field) not in expected["$in"]:
+                return False
+        elif doc.get(field) != expected:
+            return False
+    return True
+
+
+class FakeCursor:
+    """Курсор find()/sort(): to_list(None) и асинхронная итерация."""
+
+    def __init__(self, docs: list[dict], key: str | None = None):
+        self._docs, self._key = docs, key
+
+    def sort(self, key: str, _direction: int) -> "FakeCursor":
+        return FakeCursor(self._docs, key)
+
+    def _sorted(self) -> list[dict]:
+        if self._key is None:
+            return list(self._docs)
+        floor = datetime.min.replace(tzinfo=UTC)
+        return sorted(self._docs, key=lambda d: d.get(self._key) or floor, reverse=True)
+
+    async def to_list(self, _limit: int) -> list[dict]:
+        return self._sorted()
+
+    def __aiter__(self):
+        self._it = iter(self._sorted())
+        return self
+
+    async def __anext__(self) -> dict:
+        try:
+            return next(self._it)
+        except StopIteration:
+            raise StopAsyncIteration from None
+
+
+class FakeRatingsClient:
+    """Клиент Mongo в объёме инструментов оценок: коллекции users и ratings."""
+
+    def __init__(self, users: list[dict], ratings: list[dict]):
+        self._users, self._ratings = users, ratings
+
+    def __getitem__(self, _name: str) -> SimpleNamespace:
+        by_target: dict[str, list[int]] = {}
+        for d in self._ratings:
+            by_target.setdefault(d["targetUserId"], []).append(d["score"])
+        agg_rows = [{"_id": t, "avg": sum(s) / len(s), "count": len(s)} for t, s in by_target.items()]
+
+        async def aggregate(_pipeline: list[dict]) -> FakeCursor:
+            return FakeCursor(agg_rows)
+
+        return SimpleNamespace(
+            users=SimpleNamespace(find=lambda q: FakeCursor([d for d in self._users if _matches(d, q)])),
+            ratings=SimpleNamespace(
+                find=lambda q: FakeCursor([d for d in self._ratings if _matches(d, q)]),
+                aggregate=aggregate,
+            ),
+        )
+
+
+def use_ratings_db(monkeypatch: pytest.MonkeyPatch, users: list[dict], ratings: list[dict]) -> None:
+    monkeypatch.setattr("app.db.mongo._client", FakeRatingsClient(users, ratings))
+
+
+def tool_by_name(tools: list[Tool], name: str) -> Tool:
+    return next(t for t in tools if t.name == name)
+
+
+async def test_own_ratings_include_average_and_hide_anonymous_author(monkeypatch):
+    use_ratings_db(monkeypatch, users=[RATER], ratings=RATINGS_DOCS)
+    tool = tool_by_name(chat_tools(make_ctx("viewer")), "get_user_ratings")
+    res = await tool.handler({})
+    assert res["average"] == 4.5 and res["count"] == 2
+    assert res["distribution"] == {1: 0, 2: 0, 3: 0, 4: 1, 5: 1}
+    assert res["items"][0]["score"] == 4 and res["items"][0]["author"] is None  # свежий аноним — автор скрыт
+    assert res["items"][1]["author"]["name"] == "Оценщик"
+
+
+async def test_staff_reads_other_employee_ratings(monkeypatch):
+    use_ratings_db(monkeypatch, users=[RATER], ratings=[{**d, "targetUserId": "u2"} for d in RATINGS_DOCS])
+    tool = tool_by_name(chat_tools(make_ctx("coordinator")), "get_user_ratings")
+    res = await tool.handler({"employee": "Оценщик"})
+    assert res["employee"] == "Оценщик" and res["average"] == 4.5
+
+
+async def test_developer_cannot_read_other_employee_ratings(monkeypatch):
+    use_ratings_db(monkeypatch, users=[RATER], ratings=[{**RATINGS_DOCS[0], "targetUserId": "u2"}])
+    tool = tool_by_name(chat_tools(make_ctx("developer")), "get_user_ratings")
+    res = await tool.handler({"employee": "Оценщик"})
+    assert "Чужие оценки" in res["error"]
+
+
+async def test_ratings_leaderboard_puts_rated_first(monkeypatch):
+    unrated = {"_id": "u3", "fullName": "Без Оценок", "email": "u3@mts.ru", "role": "viewer", "deletedAt": None}
+    rated_on_rater = [{**d, "targetUserId": "u2"} for d in RATINGS_DOCS]  # оценки нацелены на RATER, он в списке
+    use_ratings_db(monkeypatch, users=[RATER, unrated], ratings=rated_on_rater)
+    tool = tool_by_name(chat_tools(make_ctx("viewer")), "ratings_leaderboard")
+    res = await tool.handler({})
+    assert [i["fullName"] for i in res["items"]] == ["Оценщик", "Без Оценок"]
+    assert res["items"][0]["average"] == 4.5 and res["items"][0]["count"] == 2
 
 
 def test_system_prompt_names_role_and_incident():

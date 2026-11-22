@@ -9,7 +9,9 @@
                                   добавляется в участники (как POST /incidents/{id}/members);
   переходы                      — admin+coordinator; в REST разработчик может ещё отметить исправленным (7)
                                   свой инцидент (access.can_view) — агенту это действие не выдаётся;
-  комментарии                   — admin+coordinator+viewer (как StaffUser на POST /comments).
+  комментарии                   — admin+coordinator+viewer (как StaffUser на POST /comments);
+  оценки сотрудников            — leaderboard и свои оценки — все роли; чужие оценки —
+                                  admin+coordinator+viewer (как GET /users/{id}/ratings).
 
 Отказ по правам — это {"error": ...} в ответ модели, действие не выполняется: агент не
 сможет сделать ничего сверх того, что разрешено самому пользователю.
@@ -23,7 +25,7 @@ from zoneinfo import ZoneInfo
 from app.ai.tools import Tool, ToolContext, _find_similar_incidents, _get_team_profile, _list_teams_overview
 from app.domain.classify import sla_info
 from app.domain.enums import PRIORITIES, STAFF_ROLES, STATES, TRANSITIONS, Role
-from app.services import access, incident_actions
+from app.services import access, incident_actions, ratings
 from app.services.incident_query import build_filters
 from app.services.store import get_db, get_doc
 
@@ -489,6 +491,102 @@ def _similar_tool(ctx: ToolContext) -> Tool:
     )
 
 
+def _ratings_leaderboard_tool(ctx: ToolContext) -> Tool:
+    """Рейтинг всех сотрудников по оценкам (как GET /ratings/leaderboard — открыт всем ролям)."""
+
+    async def handler(args: dict[str, Any]) -> dict[str, Any]:
+        try:
+            limit = min(int(args.get("limit") or 25), 50)
+        except (TypeError, ValueError):
+            return {"error": "limit — целое число."}
+        items = await ratings.leaderboard()
+        shown = items[:limit]
+        rated = sum(1 for i in items if i["average"] is not None)
+        return {
+            "summary": f"В рейтинге {len(items)} сотрудников, оценки есть у {rated}",
+            "items": shown,
+        }
+
+    return Tool(
+        name="ratings_leaderboard",
+        description="Рейтинг сотрудников по средним оценкам коллег (1–5): место, средняя, число голосов, "
+                    "роль, команда. Без оценок — в конце списка.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "description": "по умолчанию 25, максимум 50"},
+            },
+            "additionalProperties": False,
+        },
+        handler=handler,
+    )
+
+
+def _user_ratings_tool(ctx: ToolContext) -> Tool:
+    """Оценки одного сотрудника (как GET /users/{id}/ratings): свои — всем, чужие — только персоналу."""
+
+    async def handler(args: dict[str, Any]) -> dict[str, Any]:
+        assert ctx.user is not None
+        raw = args.get("employee")
+        if raw is not None and not isinstance(raw, str):
+            return {"error": "employee — строка: точное ФИО, email или ITSM-логин из list_employees."}
+        raw = (raw or "").strip()
+        if raw:
+            target, error = await _find_employee(raw)
+            if target is None:
+                return {"error": error}
+        else:
+            target = ctx.user  # без сотрудника — свои оценки
+        if target["_id"] != ctx.user["_id"] and Role(ctx.user["role"]) not in STAFF_ROLES:
+            return {
+                "error": "Чужие оценки могут смотреть только сотрудники (координаторы, администраторы, "
+                         "тестировщики). Свои оценки доступны без указания employee."
+            }
+        result = await ratings.aggregate(target["_id"])
+        name = target.get("fullName") or target.get("email") or "Сотрудник"
+        avg = result["average"]
+        summary = (
+            f"Оценки {name}: средняя {avg} из 5, отзывов {result['count']}"
+            if avg is not None
+            else f"Оценки {name}: пока нет оценок"
+        )
+        return {
+            "summary": summary,
+            "employee": name,
+            "average": result["average"],
+            "count": result["count"],
+            "distribution": result["distribution"],
+            "items": [
+                {
+                    "score": i["score"],
+                    "comment": _cut(i["comment"], 300),
+                    "createdAt": _iso(i["createdAt"]),
+                    "anonymous": i["anonymous"],
+                    "author": i["author"],
+                }
+                for i in result["items"]
+            ],
+        }
+
+    return Tool(
+        name="get_user_ratings",
+        description="Оценки сотрудника коллегами (1–5 звёзд с комментариями): средняя, разбивка, отзывы. "
+                    "Без аргумента — оценки пользователя, с которым вы говорите. Чужие оценки видят только "
+                    "сотрудники; анонимные отзывы не раскрывают автора.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "employee": {
+                    "type": "string",
+                    "description": "точное ФИО, email или ITSM-логин из list_employees; пропустите для своих оценок",
+                },
+            },
+            "additionalProperties": False,
+        },
+        handler=handler,
+    )
+
+
 # ---------------- действия ----------------
 
 
@@ -814,7 +912,13 @@ def chat_tools(ctx: ToolContext) -> list[Tool]:
     if access.is_developer(ctx.user):
         # в REST у разработчика единственная мутация — «исправлен» на своём инциденте;
         # агенту выдаётся только чтение его инцидентов
-        return [_search_incidents_tool(ctx), _get_incident_tool(ctx), _dashboard_summary_tool(ctx)]
+        return [
+            _search_incidents_tool(ctx),
+            _get_incident_tool(ctx),
+            _dashboard_summary_tool(ctx),
+            _ratings_leaderboard_tool(ctx),  # leaderboard в REST открыт любому пользователю
+            _user_ratings_tool(ctx),  # чужие оценки инструмент сам отклонит по правам GET /users/{id}/ratings
+        ]
     tools: list[Tool] = [
         _search_incidents_tool(ctx),
         _get_incident_tool(ctx),
@@ -823,6 +927,8 @@ def chat_tools(ctx: ToolContext) -> list[Tool]:
         _team_overview_tool(ctx),
         _team_stats_tool(ctx),
         _similar_tool(ctx),
+        _ratings_leaderboard_tool(ctx),
+        _user_ratings_tool(ctx),
     ]
     actions = action_tools(ctx)
     if can(ctx.user, "incident_write"):
