@@ -29,6 +29,7 @@ import type {
   StatsResponse,
   TeamDescriptionsResponse,
   TeamRecommendation,
+  TeamProfileResponse,
   TokenPair,
   User,
 } from './types'
@@ -582,6 +583,11 @@ export function renameTeam(name: string, newName: string): Promise<void> {
 
 export function deleteTeam(name: string): Promise<void> {
   return request<void>(`/teams/${encodeURIComponent(name)}`, { method: 'DELETE' })
+}
+
+/** Профиль команды: участники, назначенные и выполненные инциденты, средняя оценка. */
+export function fetchTeamProfile(name: string): Promise<TeamProfileResponse> {
+  return request<TeamProfileResponse>(`/teams/${encodeURIComponent(name)}/profile`)
 }
 
 export function fetchStats(): Promise<StatsResponse> {

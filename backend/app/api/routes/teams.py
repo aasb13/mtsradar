@@ -14,9 +14,12 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 
-from app.api.deps import AdminUser
+from app.api.deps import AdminUser, StaffUser
 from app.bus import rabbit
+from app.core.config import get_settings
 from app.db.mongo import get_db
+from app.domain.classify import flags
+from app.services import presenter
 from app.services.store import actor_of
 
 router = APIRouter(prefix="/teams", tags=["teams"])
@@ -90,3 +93,108 @@ async def delete(name: str, _: AdminUser) -> None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Команда не найдена")
     await get_db().teams.update_one({"name": clean, "deletedAt": None}, {"$set": {"deletedAt": datetime.now(UTC)}})
     await _publish_changed()
+
+
+@router.get("/{name}/profile")
+async def profile(name: str, _: StaffUser) -> dict[str, Any]:
+    """Профиль команды: состав, назначенные и выполненные инциденты, средняя оценка.
+
+    Команда может существовать только в инцидентах или в пользователях — тогда в
+    коллекции teams её нет, но профиль всё равно должен открываться.
+    """
+    team_name = _clean(name)
+    db = get_db()
+    team = await _alive_team(team_name)
+    known = (
+        team is not None
+        or await db.incidents.find_one({"data.assignedGroupName": team_name}) is not None
+        or await db.users.find_one({"team": team_name, "deletedAt": None}) is not None
+    )
+    if not known:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Команда не найдена")
+
+    s, now = get_settings(), datetime.now(UTC)
+    docs = [d async for d in db.incidents.find({"meta.deletedAt": None, "data.assignedGroupName": team_name})]
+    active_docs = [d for d in docs if flags(d["data"], s).is_active]
+    done_docs = [d for d in docs if not flags(d["data"], s).is_active]
+
+    accounts = [u async for u in db.users.find({"team": team_name, "deletedAt": None}).sort("fullName", 1)]
+    account_ids = [u["_id"] for u in accounts]
+    scores_by_user: dict[str, list[int]] = {uid: [] for uid in account_ids}
+    async for r in db.ratings.find({"targetUserId": {"$in": account_ids}}):
+        scores_by_user.setdefault(r["targetUserId"], []).append(r["score"])
+
+    def belongs(d: dict[str, Any], user: dict[str, Any]) -> bool:
+        data = d["data"]
+        names = {n for n in (user.get("fullName"), user.get("email")) if isinstance(n, str) and n != ""}
+        login = user.get("itsmLogin")
+        return (
+            (isinstance(login, str) and login != "" and data.get("assignedEmployeeLogin") == login)
+            or data.get("assignedEmployee") in names
+            or user["_id"] in (d.get("members") or [])
+        )
+
+    members: list[dict[str, Any]] = []
+    for u in accounts:
+        scores = scores_by_user.get(u["_id"], [])
+        members.append(
+            {
+                "id": u["_id"],
+                "name": u.get("fullName") or u["email"],
+                "email": u["email"],
+                "itsmLogin": u.get("itsmLogin"),
+                "role": u["role"],
+                "kind": "account",
+                "active": sum(belongs(d, u) for d in active_docs),
+                "done": sum(belongs(d, u) for d in done_docs),
+                "rating": {"average": round(sum(scores) / len(scores), 2), "count": len(scores)} if scores else None,
+            }
+        )
+
+    # Исполнители из ITSM, у которых нет аккаунта в системе: их names видим в инцидентах.
+    account_names = {m["name"] for m in members}
+    executors: list[str] = []
+    for d in docs:
+        executor = d["data"].get("assignedEmployee")
+        if isinstance(executor, str) and executor != "" and executor not in account_names and executor not in executors:
+            executors.append(executor)
+    for executor in executors:
+        members.append(
+            {
+                "id": None,
+                "name": executor,
+                "email": None,
+                "itsmLogin": next(
+                    (
+                        d["data"].get("assignedEmployeeLogin")
+                        for d in docs
+                        if d["data"].get("assignedEmployee") == executor and d["data"].get("assignedEmployeeLogin")
+                    ),
+                    None,
+                ),
+                "role": None,
+                "kind": "executor",
+                "active": sum(1 for d in active_docs if d["data"].get("assignedEmployee") == executor),
+                "done": sum(1 for d in done_docs if d["data"].get("assignedEmployee") == executor),
+                "rating": None,
+            }
+        )
+
+    all_scores = [score for scores in scores_by_user.values() for score in scores]
+    assigned = [presenter.card(d, now, s) for d in active_docs]
+    assigned.sort(key=presenter.sort_key)
+    done = [presenter.card(d, now, s) for d in done_docs]
+    done.sort(key=lambda c: c.get("completionDate") or "", reverse=True)
+    return {
+        "name": team_name,
+        "serverTime": now,
+        "createdAt": team.get("createdAt") if team else None,
+        "members": members,
+        "assigned": assigned,
+        "done": done,
+        "rating": {
+            "average": round(sum(all_scores) / len(all_scores), 2) if all_scores else None,
+            "count": len(all_scores),
+            "ratedMembers": sum(1 for scores in scores_by_user.values() if scores),
+        },
+    }

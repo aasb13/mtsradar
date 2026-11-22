@@ -30,7 +30,7 @@ const CHANNELS: { key: 'inApp' | 'push' | 'telegram' | 'email'; label: string }[
   { key: 'email', label: 'Email' },
 ]
 
-function TaskRow({ card, onClick }: { card: Card; onClick: () => void }) {
+export function TaskRow({ card, onClick }: { card: Card; onClick: () => void }) {
   const { state } = useApp()
   return (
     <div className="acard" onClick={onClick}>
@@ -476,7 +476,24 @@ export function ProfilePage({ userId }: { userId?: string }) {
             <>
               <div className="profilefact">
                 <p className="profilefact__label">Команда</p>
-                <p className="profilefact__value">{profileUser.team ?? '—'}</p>
+                <p className="profilefact__value">
+                  {profileUser.team === null || profileUser.team === '' ? (
+                    '—'
+                  ) : user.role === 'developer' ? (
+                    profileUser.team
+                  ) : (
+                    <a
+                      href={`/team/${encodeURIComponent(profileUser.team)}`}
+                      title="Открыть профиль команды"
+                      onClick={e => {
+                        e.preventDefault()
+                        navigate(`/team/${encodeURIComponent(profileUser.team)}`)
+                      }}
+                    >
+                      {profileUser.team}
+                    </a>
+                  )}
+                </p>
               </div>
               <div className="profilefact">
                 <p className="profilefact__label">Логин ITSM</p>

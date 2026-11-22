@@ -10,6 +10,7 @@ import { ChatPage } from './screens/chat'
 import { AdminDonePage, AdminIncidentsPage, AdminProductsPage, AdminTeamsPage, AdminUsersPage } from './screens/admin'
 import { DevPage, QaPage } from './screens/work'
 import { ProfilePage } from './screens/profile'
+import { TeamProfilePage } from './screens/team'
 import { AssignModal, FreezeModal, IncidentPanel } from './screens/panel'
 import { navigate, useRoute } from './router'
 import type { Role } from './types'
@@ -29,6 +30,15 @@ function Splash() {
       <Loading size={30} />
     </div>
   )
+}
+
+function decodePathPart(value: string): string {
+  try {
+    return decodeURIComponent(value)
+  } catch (err) {
+    console.error('Некорректный адрес страницы', err)
+    return value
+  }
 }
 
 function Screens() {
@@ -82,8 +92,19 @@ function Screens() {
     // /profile — свой профиль с настройками; /profile/<id> — чужой, только просмотр
     const otherId = route === '/profile' ? undefined : route.slice('/profile/'.length)
     screen = <ProfilePage userId={otherId === '' ? undefined : otherId} />
+  } else if (route.startsWith('/team/')) {
+    // /team/<название> — профиль команды; разработчикам чужие профили не видны
+    const teamName = route.slice('/team/'.length)
+    screen =
+      user.role === 'developer' ? (
+        <ErrorScreen code={403} />
+      ) : teamName === '' ? (
+        <ErrorScreen code={404} />
+      ) : (
+        <TeamProfilePage name={decodePathPart(teamName)} />
+      )
   } else
-  switch (route) {
+    switch (route) {
     case '/':
       screen = isStaff ? <KanbanPage /> : user.role === 'developer' ? <DevPage /> : <QaPage />
       break

@@ -661,7 +661,7 @@ function DictItemModal({
       title={isProduct ? `Продукт «${name}»` : `Команда «${name}»`}
       subtitle={`Открытых инцидентов: ${openCount}`}
       onClose={onClose}
-      width={480}
+      width={640}
       footer={
         <>
           <Button variant="danger" onClick={() => void remove()}>
@@ -896,6 +896,18 @@ export function AdminTeamsPage() {
                     </svg>
                   </span>
                 )}
+                <button
+                  type="button"
+                  className="iconbtn"
+                  aria-label={`Открыть профиль команды ${team.name}`}
+                  title="Профиль команды"
+                  onClick={e => {
+                    e.stopPropagation()
+                    navigate(`/team/${encodeURIComponent(team.name)}`)
+                  }}
+                >
+                  <LinkIcon size={16} />
+                </button>
                 <button
                   type="button"
                   className="iconbtn"

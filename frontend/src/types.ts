@@ -355,6 +355,31 @@ export interface RatingLeaderboardResponse {
   items: RatingLeaderboardItem[]
 }
 
+/** Участник команды: аккаунт в системе или исполнитель, известный только из ITSM. */
+export interface TeamMember {
+  id: string | null
+  name: string
+  email: string | null
+  itsmLogin: string | null
+  role: Role | null
+  kind: 'account' | 'executor'
+  active: number
+  done: number
+  rating: { average: number; count: number } | null
+}
+
+/** GET /teams/{name}/profile — профиль команды целиком. */
+export interface TeamProfileResponse {
+  name: string
+  serverTime: string
+  createdAt: string | null
+  members: TeamMember[]
+  assigned: Card[]
+  done: Card[]
+  /** Среднее по всем оценкам участников команды, а не среднее их средних. */
+  rating: { average: number | null; count: number; ratedMembers: number }
+}
+
 // ---------------- чат с ИИ-агентом BigDad ----------------
 
 export interface ChatAttachment {
