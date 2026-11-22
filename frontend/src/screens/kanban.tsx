@@ -259,6 +259,8 @@ export function KanbanPage() {
     const card = state.cards.get(cardId)
     const column = BOARD_COLUMNS.find(c => c.key === columnKey)
     if (card === undefined || column === undefined) return
+    // Перетаскивание в собственную колонку — пустой жест, а не нарушение правил переходов
+    if (column.stateIds.includes(card.stateId)) return
     const allowed = TRANSITIONS[card.stateId] ?? []
     const target = column.stateIds.find(id => allowed.includes(id) && id !== card.stateId)
     if (target === undefined) {
