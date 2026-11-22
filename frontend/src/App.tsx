@@ -6,6 +6,7 @@ import { LoginPage, PendingPage, RegisterPage } from './screens/auth'
 import { KanbanPage } from './screens/kanban'
 import { AttentionPage } from './screens/attention'
 import { StatsPage } from './screens/stats'
+import { ChatPage } from './screens/chat'
 import { AdminDonePage, AdminIncidentsPage, AdminProductsPage, AdminTeamsPage, AdminUsersPage } from './screens/admin'
 import { DevPage, QaPage } from './screens/work'
 import { AssignModal, FreezeModal, IncidentPanel } from './screens/panel'
@@ -74,6 +75,9 @@ function Screens() {
       break
     case '/stats':
       screen = <StatsPage />
+      break
+    case '/chat':
+      screen = <ChatPage />
       break
     case '/admin':
       screen = <AdminIncidentsPage />

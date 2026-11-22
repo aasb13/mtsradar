@@ -5,6 +5,9 @@
 
 import type {
   BoardResponse,
+  ChatSendResponse,
+  ChatSessionResponse,
+  ChatSessionsResponse,
   Comment,
   Dictionaries,
   DashboardResponse,
@@ -299,6 +302,78 @@ export function fetchTeamDescriptions(): Promise<TeamDescriptionsResponse> {
 
 export function refreshTeamDescriptions(): Promise<TeamDescriptionsResponse> {
   return request<TeamDescriptionsResponse>('/ai/team-descriptions', { method: 'POST' })
+}
+
+// ---------------- чат с ИИ-агентом BigDad ----------------
+
+export function fetchChatSessions(): Promise<ChatSessionsResponse> {
+  return request<ChatSessionsResponse>('/ai/chat/sessions')
+}
+
+export function createChatSession(body: {
+  firstMessage?: string
+  attachmentIds?: string[]
+  incidentId?: string
+}): Promise<ChatSessionResponse> {
+  return request<ChatSessionResponse>('/ai/chat/sessions', { method: 'POST', body })
+}
+
+export function fetchChatSession(id: string): Promise<ChatSessionResponse> {
+  return request<ChatSessionResponse>(`/ai/chat/sessions/${encodeURIComponent(id)}`)
+}
+
+export function deleteChatSession(id: string): Promise<void> {
+  return request<void>(`/ai/chat/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export function sendChatMessage(
+  id: string,
+  body: { text: string; attachmentIds?: string[]; replyToMessageId?: string },
+): Promise<ChatSendResponse> {
+  return request<ChatSendResponse>(`/ai/chat/sessions/${encodeURIComponent(id)}/messages`, { method: 'POST', body })
+}
+
+/** Вложение чата: multipart, поэтому отдельный fetch (request() умеет только JSON). */
+export async function uploadChatFile(file: File, retry = true): Promise<{ id: string; name: string; size: number }> {
+  const form = new FormData()
+  form.append('file', file)
+  let res: Response
+  try {
+    res = await fetch('/api/ai/chat/uploads', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${getAccessToken() ?? ''}` },
+      body: form,
+    })
+  } catch (err) {
+    throw new ApiError(0, 'Сервер недоступен')
+  }
+  if (res.status === 401 && retry && getRefreshToken() !== null && (await refreshTokens())) {
+    return uploadChatFile(file, false)
+  }
+  if (!res.ok) throw await errorOf(res)
+  return (await res.json()) as { id: string; name: string; size: number }
+}
+
+/** Скачивание вложения: авторизация заголовком, поэтому blob + временная ссылка. */
+export async function downloadChatFile(id: string, name: string, retry = true): Promise<void> {
+  let res: Response
+  try {
+    res = await fetch(`/api/ai/chat/files/${encodeURIComponent(id)}`, {
+      headers: { Authorization: `Bearer ${getAccessToken() ?? ''}` },
+    })
+  } catch (err) {
+    throw new ApiError(0, 'Сервер недоступен')
+  }
+  if (res.status === 401 && retry && getRefreshToken() !== null && (await refreshTokens())) {
+    return downloadChatFile(id, name, false)
+  }
+  if (!res.ok) throw await errorOf(res)
+  const url = URL.createObjectURL(await res.blob())
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 // ---------------- пользователи ----------------

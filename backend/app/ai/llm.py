@@ -35,6 +35,12 @@ async def chat(messages: list[dict[str, Any]], tools: list[dict[str, Any]] | Non
     body: dict[str, Any] = {"model": s.llm_model, "messages": messages, "temperature": 0.2}
     if tools:
         body["tools"] = tools
+    if s.llm_reasoning_budget is not None:
+        # reasoning-модели (llama.cpp): ограничиваем размышления, иначе агент зацикливается.
+        # Явный max_tokens обязателен: без него reasoning может съесть весь лимит генерации
+        # сервера и прийти пустой content — для агента это «пустой ответ».
+        body["reasoning_budget"] = s.llm_reasoning_budget
+        body["max_tokens"] = s.llm_reasoning_budget + 8192
     headers = {"Authorization": f"Bearer {s.llm_api_key}"} if s.llm_api_key else {}
     url = s.llm_api_base.rstrip("/") + "/chat/completions"
     try:

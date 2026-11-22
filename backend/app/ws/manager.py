@@ -18,16 +18,19 @@ from app.services import access
 log = logging.getLogger(__name__)
 
 # что пересылаем в браузер
-WS_BINDINGS = ["incident.#", "import.#", "notification.user.#", "registration.#"]
+WS_BINDINGS = ["incident.#", "import.#", "notification.user.#", "registration.#", "chat.user.#"]
 
 
 def personalize(user: dict[str, Any], routing_key: str, envelope: dict[str, Any]) -> dict[str, Any] | None:
     """Что отправить конкретному пользователю: событие как есть, урезанное или ничего (None).
 
-    Сотрудники (admin/coordinator/viewer) получают всё. Разработчик — только события по своим
-    инцидентам; если инцидент перестал быть «его» (переназначили, убрали из участников),
-    он получает incident.removed, чтобы приложение убрало карточку из списка.
+    События чата адресные: chat.user.{userId} получает только владелец сессии.
+    Сотрудники (admin/coordinator/viewer) получают всё остальное. Разработчик — только
+    события по своим инцидентам; если инцидент перестал быть «его» (переназначили, убрали
+    из участников), он получает incident.removed, чтобы приложение убрало карточку из списка.
     """
+    if routing_key.startswith("chat.user."):
+        return envelope if routing_key == f"chat.user.{user['_id']}" else None
     if not access.is_developer(user):
         return envelope
     if not routing_key.startswith("incident."):

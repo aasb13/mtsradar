@@ -273,6 +273,59 @@ export interface MyIncidentsResponse {
   levels: { priorityId: number; title: string; name: string; count: number; items: Card[] }[]
 }
 
+// ---------------- чат с ИИ-агентом BigDad ----------------
+
+export interface ChatAttachment {
+  id: string
+  name: string
+  size: number
+}
+
+export interface ChatActionTrace {
+  tool: string
+  ok: boolean
+  summary: string
+}
+
+export interface ChatReplyTo {
+  messageId: string
+  snippet: string
+}
+
+export interface ChatMessage {
+  id: string
+  sessionId: string
+  role: 'user' | 'assistant'
+  text: string
+  attachments: ChatAttachment[]
+  replyTo: ChatReplyTo | null
+  actions: ChatActionTrace[]
+  createdAt: string
+}
+
+export interface ChatSession {
+  id: string
+  title: string
+  incidentId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ChatSessionsResponse {
+  items: ChatSession[]
+}
+
+export interface ChatSessionResponse {
+  session: ChatSession
+  messages: ChatMessage[]
+}
+
+export interface ChatSendResponse {
+  session: ChatSession
+  userMessage: ChatMessage
+  assistantMessage: ChatMessage
+}
+
 export interface WsEnvelope {
   eventId?: string
   type: string

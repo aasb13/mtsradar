@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import (
     ai,
+    ai_chat,
     auth,
     data_io,
     incidents,
@@ -106,6 +107,7 @@ for r in (
     data_io.router,
     notifications.router,
     ai.router,
+    ai_chat.router,
     ws.router,
     tg.api_router,
     my.router,

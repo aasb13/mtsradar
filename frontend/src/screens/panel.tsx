@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import * as api from '../api'
 import { formatShort, formatTimeLeft, liveSla, relativeTime, shortName, slaBigValue } from '../format'
+import { navigate } from '../router'
 import { useApp } from '../store'
 import type { AiAlternative, Card, Comment, HistoryEvent, IncidentDetail } from '../types'
 import { ArrowRightIcon, Avatar, Button, CloseIcon, CommentIcon, LinkIcon, Modal, RefreshIcon, SeverityBadge, SlaChip, SnowflakeIcon, SparkIcon, StatusPill, Textarea, TeamIcon } from '../ui'
@@ -67,7 +68,7 @@ function descriptionOf(detail: IncidentDetail | null, meta: Record<string, unkno
 }
 
 export function IncidentPanel() {
-  const { state, dispatch, showToast } = useApp()
+  const { state, dispatch, showToast, doAssign } = useApp()
   const id = state.panelId
   const [detail, setDetail] = useState<IncidentDetail | null>(null)
   const [history, setHistory] = useState<HistoryEvent[]>([])
@@ -130,6 +131,19 @@ export function IncidentPanel() {
       console.error('Не удалось отправить комментарий', err)
       showToast('Не удалось отправить комментарий', 'warning')
     }
+  }
+
+  // прямой ответ на предложение BigDad: принять (назначить) или обсудить в чате с контекстом
+  const acceptRecommendation = async (group: string) => {
+    await doAssign(card, group, null)
+  }
+
+  const discussInChat = () => {
+    const draft =
+      ai !== null && ai.recommendedGroup !== null
+        ? `Инцидент ${card.id}: BigDad рекомендует команду «${ai.recommendedGroup}»${ai.recommendedReason !== null ? ` — ${ai.recommendedReason}` : ''}. Проверь, насколько это надёжно, и если всё в порядке — передай инцидент этой команде.`
+        : `Расскажи подробнее про инцидент ${card.id}: что происходит, какие риски и что делать дальше.`
+    navigate(`/chat?incident=${encodeURIComponent(card.id)}&draft=${encodeURIComponent(draft)}`)
   }
 
   const close = () => dispatch({ type: 'OPEN_PANEL', id: null })
@@ -333,6 +347,25 @@ export function IncidentPanel() {
                   <b>Кому передать: {ai.recommendedGroup}</b>
                   {ai.recommendedReason !== null && <p>{ai.recommendedReason}</p>}
                 </div>
+              </div>
+            )}
+            {aiEnabled && (
+              <div className="bigdad__reply">
+                {ai.recommendedGroup !== null && (
+                  <Button
+                    variant="primary"
+                    className="btn--sm"
+                    onClick={() => {
+                      const group = ai.recommendedGroup
+                      if (group !== null) void acceptRecommendation(group)
+                    }}
+                  >
+                    Принять: передать на {ai.recommendedGroup}
+                  </Button>
+                )}
+                <Button variant="ghost" className="btn--sm" onClick={discussInChat}>
+                  Обсудить в чате
+                </Button>
               </div>
             )}
           </div>

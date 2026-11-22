@@ -8,6 +8,9 @@
   registration_requests заявки на регистрацию (одобряет админ — тогда создаётся пользователь)
   notifications   центр уведомлений (колокольчик)
   team_descriptions ИИ-описания команд для раздела статистика ({_id: имя команды, text, model, updatedAt})
+  chat_sessions    сессии чата с ИИ-агентом BigDad ({userId, title, incidentId})
+  chat_messages    сообщения чата ({sessionId, role: user|assistant, text, attachments, actions})
+  chat_files       вложения чата ({userId, name, size, contentType, preview, data})
   import_runs     отчёты об импортах файла
   devices         токены push-уведомлений мобильного приложения (FCM)
 """
@@ -58,3 +61,7 @@ async def ensure_indexes() -> None:
     await db.devices.create_index("userId")
     await db.notifications.create_index([("userId", ASCENDING), ("readAt", ASCENDING), ("createdAt", DESCENDING)])
     await db.import_runs.create_index([("startedAt", DESCENDING)])
+    # чат с ИИ-агентом: список сессий пользователя и история сообщений сессии
+    await db.chat_sessions.create_index([("userId", ASCENDING), ("updatedAt", DESCENDING)])
+    await db.chat_messages.create_index([("sessionId", ASCENDING), ("createdAt", ASCENDING)])
+    await db.chat_files.create_index("userId")

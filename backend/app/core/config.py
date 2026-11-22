@@ -93,10 +93,16 @@ class Settings(BaseSettings):
     llm_api_key: str | None = None
     llm_model: str | None = None
     llm_timeout_sec: int = 120
+    # Лимит reasoning-токенов модели (llama.cpp reasoning_budget). None — не отправлять:
+    # часть OpenAI-совместимых API отвергает неизвестные параметры.
+    llm_reasoning_budget: int | None = None
     # максимум ответов модели за один прогон агента (вызов инструмента = один ответ).
     # Аналитику команд нужен запас: 22 команды в данных → до ~24 ходов, если модель
     # не батчит вызовы get_team_profile в одно сообщение
     llm_max_iterations: int = 40
+    # чат-агенту хватает нескольких ходов (поиск → карточка → ответ); маленький лимит
+    # ограничивает и суммарный размер диалога в токенах
+    llm_chat_max_iterations: int = 8
 
 
 @lru_cache

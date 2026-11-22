@@ -44,12 +44,17 @@ class Tool:
 
 @dataclass
 class ToolContext:
-    """Данные, нужные инструментам: окно агрегации и рамки ответа модели."""
+    """Данные, нужные инструментам: окно агрегации, рамки ответа модели, пользователь.
+
+    user — от чьего имени работает агент (чат); инструменты-действия сверяют с ним права,
+    а чтение для разработчика сужается до его инцидентов. Для остальных агентов None.
+    """
 
     now: datetime
     settings: Settings
     known_groups: list[str]
     incident_id: str | None = None
+    user: dict[str, Any] | None = None
     # сюда финальные инструменты складывают проверенный ответ модели
     result: dict[str, Any] | None = None
     finished: bool = False

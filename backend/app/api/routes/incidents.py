@@ -1,8 +1,6 @@
 """Инциденты: дашборд (4 группы), канбан, список с фильтрами, карточка, правки, переходы,
-подтверждение критических, комментарии, история."""
+подтверждение критических, комментарии, история. Мутации — общий слой incident_actions."""
 
-import re
-import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
@@ -15,18 +13,15 @@ from app.core.config import get_settings
 from app.db.mongo import get_db
 from app.domain.enums import (
     CLOSED,
-    FINAL_STATE_IDS,
     GROUP_TITLES,
-    PRIORITIES,
     RESOLVED,
     STATES,
     TRANSITIONS,
     Group,
 )
-from app.domain.normalize import reconcile_codes, sanitize, to_ms_utc
-from app.services import access, presenter
-from app.services.exporter import maybe_write_back
-from app.services.store import ConflictError, actor_of, archive_incident, get_doc, save_incident
+from app.services import access, incident_actions, presenter
+from app.services.incident_query import build_filters
+from app.services.store import actor_of, get_doc
 
 router = APIRouter(tags=["incidents"])
 
@@ -117,7 +112,9 @@ async def board(
     closedLimit: int = Query(30, ge=0, le=500),
 ) -> dict[str, Any]:
     s, now = get_settings(), _now()
-    query = _filters(priorityId=priorityId, assignedGroupName=assignedGroupName, productName=productName, q=q)
+    query = build_filters(
+        priorityId=priorityId, assignedGroupName=assignedGroupName, productName=productName, q=q
+    )
     columns = {sid: [] for sid in BOARD_COLUMNS}
     async for d in get_db().incidents.find(query):
         sid = d["data"]["stateId"]
@@ -135,36 +132,6 @@ async def board(
 
 
 # ---------------- список ----------------
-
-
-def _filters(
-    *,
-    priorityId: list[int] | None = None,
-    stateId: list[int] | None = None,
-    assignedGroupName: str | None = None,
-    productName: str | None = None,
-    q: str | None = None,
-    group: Group | None = None,
-    active: bool | None = None,
-    includeDeleted: bool = False,
-) -> dict[str, Any]:
-    query: dict[str, Any] = {} if includeDeleted else {"meta.deletedAt": None}
-    if priorityId:
-        query["data.priorityId"] = {"$in": priorityId}
-    if stateId:
-        query["data.stateId"] = {"$in": stateId}
-    if assignedGroupName:
-        query["data.assignedGroupName"] = assignedGroupName
-    if productName:
-        query["data.productName"] = productName
-    if group:
-        query["meta.groups"] = group.value
-    if active is not None:
-        query["meta.isActive"] = active
-    if q:
-        rx = {"$regex": re.escape(q.strip()), "$options": "i"}
-        query["$or"] = [{"_id": rx}, {"data.header": rx}, {"data.description": rx}, {"data.service": rx}]
-    return query
 
 
 @router.get("/incidents")
@@ -185,7 +152,7 @@ async def list_incidents(
     perPage: int = Query(50, ge=1, le=500),
 ) -> dict[str, Any]:
     s, now = get_settings(), _now()
-    query = _filters(
+    query = build_filters(
         priorityId=priorityId,
         stateId=stateId,
         assignedGroupName=assignedGroupName,
@@ -247,14 +214,11 @@ class IncidentPatch(BaseModel):
 
 
 async def _save(doc: dict[str, Any], data: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]:
-    reconcile_codes(data, doc["data"])
-    sanitize(data)
     try:
-        await save_incident(data, source="api", actor=actor_of(user), prev_doc=doc)
-    except ConflictError as e:
+        updated = await incident_actions.apply_patch(doc, data, user)
+    except incident_actions.ConflictError as e:
         raise HTTPException(status.HTTP_409_CONFLICT, "Инцидент изменился, обновите карточку") from e
-    await maybe_write_back()
-    return presenter.detail(await get_doc(doc["_id"]), _now())
+    return presenter.detail(updated, _now())
 
 
 @router.patch("/incidents/{incident_id}")
@@ -262,16 +226,8 @@ async def patch_incident(incident_id: str, body: IncidentPatch, user: Coordinato
     doc = await _doc_or_404(incident_id)
     if body.expectedVersion is not None and body.expectedVersion != doc["meta"]["version"]:
         raise HTTPException(status.HTTP_409_CONFLICT, "Инцидент изменился, обновите карточку")
-    data = dict(doc["data"])
     fields = body.model_dump(exclude_unset=True, exclude={"expectedVersion"})
-    if "priorityId" in fields:
-        data["priority"] = PRIORITIES[fields["priorityId"]]
-    if "deadline" in fields:
-        fields["deadline"] = to_ms_utc(fields["deadline"])
-    if "assignedGroupName" in fields and fields["assignedGroupName"] != data.get("assignedGroupName"):
-        data["lastAssignmentToTeamDateTime"] = to_ms_utc(_now())
-    data.update(fields)
-    return await _save(doc, data, user)
+    return await _save(doc, fields, user)
 
 
 class TransitionIn(BaseModel):
@@ -284,63 +240,32 @@ class TransitionIn(BaseModel):
 @router.post("/incidents/{incident_id}/transition")
 async def transition(incident_id: str, body: TransitionIn, user: CoordinatorUser) -> dict[str, Any]:
     doc = await _doc_or_404(incident_id)
-    current = doc["data"]["stateId"]
-    if current in FINAL_STATE_IDS:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Инцидент закрыт — при повторе проблемы заводится новый")
-    if body.toStateId not in TRANSITIONS.get(current, ()):
-        allowed = sorted(TRANSITIONS.get(current, ()))
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY, f"Переход {current} -> {body.toStateId} запрещён; можно: {allowed}"
+    try:
+        result = await incident_actions.apply_transition(
+            doc, body.toStateId, state_reason=body.stateReason, solution=body.solution, user=user
         )
-    data = dict(doc["data"])
-    data["stateId"] = body.toStateId
-    data["state"], data["stateEnum"] = STATES[body.toStateId]
-    now = to_ms_utc(_now())
-    if body.toStateId in (RESOLVED, CLOSED) and not data.get("completionDate"):
-        data["completionDate"] = now
-    if body.toStateId == 2 and current == RESOLVED:  # возврат в работу
-        data["completionDate"] = None
-    if body.stateReason is not None:
-        data["stateReason"] = body.stateReason
-    if body.solution is not None:
-        data["solution"] = body.solution
-    result = await _save(doc, data, user)
+    except incident_actions.ClosedError as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
+    except incident_actions.InvalidTransitionError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e)) from e
+    except incident_actions.ConflictError as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Инцидент изменился, обновите карточку") from e
     if body.comment:
-        await _add_comment(incident_id, body.comment, user)
-    return result
+        await incident_actions.add_comment(incident_id, body.comment, user)
+    return presenter.detail(result, _now())
 
 
 @router.post("/incidents/{incident_id}/ack")
 async def acknowledge(incident_id: str, user: CoordinatorUser) -> dict[str, Any]:
     """«Принял в работу» по критическому — баннер у всех координаторов гаснет."""
     doc = await _doc_or_404(incident_id)
-    now = _now()
-    ack = {"userId": user["_id"], "name": user.get("fullName"), "at": now}
-    await get_db().incidents.update_one({"_id": incident_id}, {"$set": {"ack": ack}})
-    await get_db().incident_events.insert_one(
-        {
-            "incidentId": incident_id,
-            "at": now,
-            "type": "acknowledged",
-            "source": "api",
-            "actor": actor_of(user),
-            "kinds": ["acknowledged"],
-            "changes": [],
-            "groupsEntered": [],
-            "groupsLeft": [],
-        }
-    )
-    doc["ack"] = ack
-    card = presenter.card(doc, now)
-    await rabbit.publish("incident.acknowledged", {"incidentId": incident_id, "actor": actor_of(user), "card": card})
-    return card
+    return await incident_actions.acknowledge(doc, user)
 
 
 @router.delete("/incidents/{incident_id}", status_code=204)
 async def delete_incident(incident_id: str, user: CoordinatorUser) -> None:
     doc = await _doc_or_404(incident_id)
-    await archive_incident(doc, source="api", actor=actor_of(user))
-    await maybe_write_back()
+    await incident_actions.archive(doc, user)
 
 
 @router.post("/incidents/{incident_id}/restore")
@@ -365,21 +290,6 @@ class CommentIn(BaseModel):
     text: str = Field(min_length=1, max_length=5000)
 
 
-async def _add_comment(incident_id: str, text: str, user: dict[str, Any]) -> dict[str, Any]:
-    now = _now()
-    comment = {
-        "_id": uuid.uuid4().hex,
-        "incidentId": incident_id,
-        "author": actor_of(user),
-        "text": text,
-        "createdAt": now,
-        "deletedAt": None,
-    }
-    await get_db().comments.insert_one(comment)
-    await rabbit.publish("incident.comment_added", {"incidentId": incident_id, "comment": presenter.public(comment)})
-    return presenter.public(comment)
-
-
 @router.get("/incidents/{incident_id}/comments")
 async def list_comments(incident_id: str, _: StaffUser) -> list[dict[str, Any]]:
     cursor = get_db().comments.find({"incidentId": incident_id, "deletedAt": None}).sort("createdAt", 1)
@@ -389,7 +299,7 @@ async def list_comments(incident_id: str, _: StaffUser) -> list[dict[str, Any]]:
 @router.post("/incidents/{incident_id}/comments", status_code=201)
 async def add_comment(incident_id: str, body: CommentIn, user: StaffUser) -> dict[str, Any]:
     await _doc_or_404(incident_id)
-    return await _add_comment(incident_id, body.text, user)
+    return await incident_actions.add_comment(incident_id, body.text, user)
 
 
 @router.delete("/comments/{comment_id}", status_code=204)

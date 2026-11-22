@@ -521,6 +521,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
             // заявки на регистрацию: открытый раздел «Пользователи» перезагружает список
             window.dispatchEvent(new CustomEvent('radar:registration'))
             break
+          case 'chat.updated':
+            // чат с BigDad: открытый экран чата дополняет сообщения, список сессий обновляется
+            window.dispatchEvent(new CustomEvent('radar:chat', { detail: payload }))
+            break
           case 'import.completed':
             showToast('Данные обновлены из файла инцидентов', 'success')
             void refreshBoard()

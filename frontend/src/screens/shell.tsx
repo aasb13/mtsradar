@@ -15,18 +15,20 @@ const NAV: Record<Role, NavItem[]> = {
   coordinator: [
     { path: '/', label: 'Канбан' },
     { path: '/attention', label: 'Группы внимания' },
+    { path: '/chat', label: 'BigDad' },
   ],
   admin: [
     { path: '/', label: 'Канбан' },
     { path: '/attention', label: 'Группы внимания' },
+    { path: '/chat', label: 'BigDad' },
     { path: '/admin', label: 'Инциденты' },
     { path: '/admin/products', label: 'Продукты' },
     { path: '/admin/teams', label: 'Команды' },
     { path: '/admin/users', label: 'Пользователи' },
     { path: '/admin/done', label: 'Завершённые' },
   ],
-  developer: [],
-  viewer: [],
+  developer: [{ path: '/chat', label: 'BigDad' }],
+  viewer: [{ path: '/chat', label: 'BigDad' }],
 }
 
 function Logo() {
