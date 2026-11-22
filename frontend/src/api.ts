@@ -17,7 +17,10 @@ import type {
   IncidentDetail,
   Invite,
   IncidentsResponse,
+  MePatch,
+  MeResponse,
   MyIncidentsResponse,
+  MyTasksResponse,
   NotificationsResponse,
   RegistrationRequest,
   StatsResponse,
@@ -189,11 +192,11 @@ export function logoutRequest(): Promise<void> {
     .catch(() => undefined) as Promise<void>
 }
 
-export function fetchMe(): Promise<User> {
-  return request<User>('/me')
+export function fetchMe(): Promise<MeResponse> {
+  return request<MeResponse>('/me')
 }
 
-export function patchMe(body: Partial<User>): Promise<User> {
+export function patchMe(body: MePatch): Promise<User> {
   return request<User>('/me', { method: 'PATCH', body })
 }
 
@@ -494,6 +497,10 @@ export function fetchUsers(): Promise<User[]> {
   return request<User[]>('/users')
 }
 
+export function fetchUser(id: string): Promise<User> {
+  return request<User>(`/users/${encodeURIComponent(id)}`)
+}
+
 export function createUser(body: { email: string; password: string; fullName: string; role: string; itsmLogin?: string }): Promise<User> {
   return request<User>('/users', { method: 'POST', body })
 }
@@ -580,4 +587,19 @@ export function fetchStats(): Promise<StatsResponse> {
 
 export function fetchMyIncidents(includeResolved = false): Promise<MyIncidentsResponse> {
   return request<MyIncidentsResponse>(`/my/incidents${includeResolved ? '?includeResolved=true' : ''}`)
+}
+
+/** Задачи текущего пользователя — инциденты, в которых он участвует лично. */
+export function fetchMyTasks(includeResolved = false): Promise<MyTasksResponse> {
+  return request<MyTasksResponse>(`/my/tasks${includeResolved ? '?includeResolved=true' : ''}`)
+}
+
+/** Задачи другого пользователя (чужой профиль, доступно сотрудникам). */
+export function fetchUserTasks(id: string, includeResolved = false): Promise<MyTasksResponse> {
+  return request<MyTasksResponse>(`/users/${encodeURIComponent(id)}/tasks${includeResolved ? '?includeResolved=true' : ''}`)
+}
+
+/** Отвязать Telegram-уведомления (кнопка в профиле). */
+export function unlinkTelegram(): Promise<void> {
+  return request<void>('/tg/unlink', { method: 'POST' })
 }

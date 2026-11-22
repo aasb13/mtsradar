@@ -90,3 +90,7 @@ multitenancy, PDF reports — mock data only.
 After every commit, immediately push the branch to **both** remotes: `git push origin
 <branch> && git push github <branch>`. This overrides the global default of keeping
 commits local.
+
+Do not spend time on a clean commit history: commit everything in one go, together
+with other in-flight changes in the working tree. No hunk-splitting, no separate
+commits per feature — one commit with all modified files is the norm here.

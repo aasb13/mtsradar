@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { initials, pluralize, relativeTime } from '../format'
 import { navigate, useRoute } from '../router'
 import { useApp } from '../store'
-import { BellIcon, CloseIcon, LogoutIcon, MoonIcon, SearchIcon, StatsIcon, SunIcon } from '../ui'
+import { BellIcon, CloseIcon, LogoutIcon, MoonIcon, SearchIcon, StatsIcon, SunIcon, UserIcon } from '../ui'
 import * as api from '../api'
 import type { Notification, Role, ToastItem } from '../types'
 
@@ -192,6 +192,18 @@ function AvatarMenu({ onClose }: { onClose: () => void }) {
         <p style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 4 }}>Роль: {ROLE_LABEL[user.role] ?? user.role}</p>
       </div>
       <div style={{ padding: 8 }}>
+        <button
+          type="button"
+          className="fchip-menu__sel"
+          style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 8 }}
+          onClick={() => {
+            onClose()
+            navigate('/profile')
+          }}
+        >
+          <UserIcon size={16} />
+          Профиль
+        </button>
         <button
           type="button"
           className="fchip-menu__sel"

@@ -46,7 +46,9 @@ export function ChatPage() {
   const [deletingBusy, setDeletingBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
-  const draftRef = useRef<{ incidentId: string; text: string } | null>(null)
+  // отложенный вопрос из панели инцидента («Обсудить в чате»); state, а не ref:
+  // ставится из обработчика popstate, и эффект отправки должен на это отреагировать
+  const [queuedDraft, setQueuedDraft] = useState<{ incidentId: string; text: string } | null>(null)
   // зеркало activeId: navigate dispatch'ит popstate до re-render, state туда опаздывает
   const activeIdRef = useRef<string | null>(null)
   const activate = useCallback((id: string | null) => {
@@ -150,8 +152,8 @@ export function ChatPage() {
       }
       const incidentId = q.get('incident')
       const draft = q.get('draft')
-      if (incidentId !== null && draft !== null && draft !== '' && !waiting) {
-        draftRef.current = { incidentId, text: draft }
+      if (incidentId !== null && draft !== null && draft !== '') {
+        setQueuedDraft({ incidentId, text: draft })
         navigate('/chat', true)
       }
     }
@@ -170,11 +172,12 @@ export function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // запуск отложенного вопроса из панели инцидента («Обсудить в чате»)
+  // отправка отложенного вопроса из панели инцидента («Обсудить в чате»); ждём,
+  // пока не завершится текущий стрим — вторую сессию параллельно не начинаем
   useEffect(() => {
-    if (draftRef.current === null || waiting) return
-    const { incidentId, text: draft } = draftRef.current
-    draftRef.current = null
+    if (queuedDraft === null || waiting) return
+    const { incidentId, text: question } = queuedDraft
+    setQueuedDraft(null)
     void (async () => {
       try {
         const res = await api.createChatSession({ incidentId })
@@ -182,16 +185,17 @@ export function ChatPage() {
         activate(res.session.id)
         setMessages([])
         navigate(`/chat?s=${res.session.id}`, true)
-        await runExchange(res.session.id, draft, [], null)
+        await runExchange(res.session.id, question, [], null, () => setText(question))
       } catch (err) {
         console.error('Не удалось начать чат с BigDad', err)
         showToast(
           err instanceof api.ApiError && err.message !== '' ? err.message : 'BigDad сейчас не отвечает',
           'warning',
         )
+        setText(question) // вопрос не пропал — его можно отправить вручную
       }
     })()
-  }, [activate, runExchange, waiting, showToast])
+  }, [activate, queuedDraft, runExchange, waiting, showToast])
 
   // живое обновление по WebSocket (ответ агента в другой вкладке)
   useEffect(() => {

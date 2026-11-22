@@ -8,6 +8,8 @@ from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 
 from app.api.deps import AdminUser, StaffUser
+from app.api.routes.my import tasks_for_user
+from app.core.config import get_settings
 from app.core.security import hash_password
 from app.db.mongo import get_db
 from app.domain.enums import Role
@@ -46,6 +48,17 @@ async def get_user(user_id: str, _: StaffUser) -> dict[str, Any]:
     if not u:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Пользователь не найден")
     return public_user(u)
+
+
+@router.get("/{user_id}/tasks")
+async def user_tasks(user_id: str, _: StaffUser, includeResolved: bool = False) -> dict[str, Any]:
+    """Задачи пользователя из чужого профиля — те же правила, что у /my/tasks."""
+    target = await get_db().users.find_one({"_id": user_id, "deletedAt": None})
+    if not target:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Пользователь не найден")
+    s, now = get_settings(), datetime.now(UTC)
+    cards = await tasks_for_user(target, includeResolved, now, s)
+    return {"serverTime": now, "role": target["role"], "total": len(cards), "items": cards}
 
 
 @router.post("", status_code=201)

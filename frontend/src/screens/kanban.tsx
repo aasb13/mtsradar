@@ -42,7 +42,9 @@ export function FilterChipMenu({
     >
       <span className="fchip__label">{label}</span>
       <span className="fchip__value">{value}</span>
-      <ChevronDownIcon size={14} />
+      <span className={`fchip__chev${open ? ' fchip__chev--open' : ''}`}>
+        <ChevronDownIcon size={14} />
+      </span>
       {open && (
         <span className="fchip-menu" onClick={e => e.stopPropagation()}>
           {options.map(o => (

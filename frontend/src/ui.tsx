@@ -94,7 +94,7 @@ export function SlaChip({ card, now, frozen }: { card: Card; now: number; frozen
 
 // ---------------- аватар ----------------
 
-export function Avatar({ name, size = 'md', tone = 'blue' }: { name?: string | null | undefined; size?: 'sm' | 'md' | 'lg'; tone?: 'blue' | 'violet' | 'ghost' }) {
+export function Avatar({ name, size = 'md', tone = 'blue' }: { name?: string | null | undefined; size?: 'sm' | 'md' | 'lg' | 'xl'; tone?: 'blue' | 'violet' | 'ghost' }) {
   if (tone === 'ghost') {
     return (
       <span className={`avatar avatar--${size} avatar--ghost`}>

@@ -106,6 +106,7 @@ async def logout(body: RefreshIn) -> None:
 
 class NotificationSettingsIn(BaseModel):
     inApp: bool = True
+    push: bool = True
     telegram: bool = False
     email: bool = False
     kinds: dict[str, bool] = Field(default_factory=dict)

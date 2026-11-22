@@ -9,6 +9,7 @@ import { StatsPage } from './screens/stats'
 import { ChatPage } from './screens/chat'
 import { AdminDonePage, AdminIncidentsPage, AdminProductsPage, AdminTeamsPage, AdminUsersPage } from './screens/admin'
 import { DevPage, QaPage } from './screens/work'
+import { ProfilePage } from './screens/profile'
 import { AssignModal, FreezeModal, IncidentPanel } from './screens/panel'
 import { navigate, useRoute } from './router'
 import type { Role } from './types'
@@ -44,6 +45,10 @@ function Screens() {
     if (route === '/login' || route === '/register' || route === '/pending') {
       navigate(HOME_BY_ROLE[state.user.role], true)
     }
+    // чужой профиль разработчику не виден: его видимость ограничена своими инцидентами
+    if (route.startsWith('/profile/') && state.user.role === 'developer' && route !== `/profile/${state.user.id}`) {
+      navigate('/profile', true)
+    }
   }, [state.user, state.authChecking, route])
 
   // Esc закрывает панель инцидента
@@ -69,6 +74,11 @@ function Screens() {
   const isStaff = user.role === 'coordinator' || user.role === 'admin'
 
   let screen: ReactNode
+  if (route === '/profile' || route.startsWith('/profile/')) {
+    // /profile — свой профиль с настройками; /profile/<id> — чужой, только просмотр
+    const otherId = route === '/profile' ? undefined : route.slice('/profile/'.length)
+    screen = <ProfilePage userId={otherId === '' ? undefined : otherId} />
+  } else
   switch (route) {
     case '/':
       screen = isStaff ? <KanbanPage /> : user.role === 'developer' ? <DevPage /> : <QaPage />

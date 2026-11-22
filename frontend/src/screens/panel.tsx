@@ -145,10 +145,14 @@ export function IncidentPanel() {
   }
 
   const discussInChat = () => {
+    const header = card.header ?? ''
+    const title = header !== '' ? ` «${header}»` : ''
     const draft =
       ai !== null && ai.recommendedGroup !== null
-        ? `Инцидент ${card.id}: BigDad рекомендует команду «${ai.recommendedGroup}»${ai.recommendedReason !== null ? ` — ${ai.recommendedReason}` : ''}. Проверь, насколько это надёжно, и если всё в порядке — передай инцидент этой команде.`
-        : `Расскажи подробнее про инцидент ${card.id}: что происходит, какие риски и что делать дальше.`
+        ? `Инцидент ${card.id}${title}: ты рекомендовал команду «${ai.recommendedGroup}»${ai.recommendedReason !== null ? ` — ${ai.recommendedReason}` : ''}. Проверь, насколько это надёжно, и если всё в порядке — передай инцидент этой команде.`
+        : `Расскажи подробнее про инцидент ${card.id}${title}: что происходит, какие риски и что делать дальше.`
+    // закрываем панель, иначе чат откроется под оверлеем карточки
+    dispatch({ type: 'OPEN_PANEL', id: null })
     navigate(`/chat?incident=${encodeURIComponent(card.id)}&draft=${encodeURIComponent(draft)}`)
   }
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import * as api from '../api'
 import { formatDurationWords, formatShort, priorityMeta, relativeTime } from '../format'
+import { navigate } from '../router'
 import { useApp } from '../store'
 import type { Card, Invite, RegistrationRequest, Role, User } from '../types'
 import { PRIORITY_SLA_HOURS, PRIORITIES, ROLE_LABELS } from '../types'
@@ -213,9 +214,11 @@ function StatusTabsMenu({ value, onChange }: { value: StatusTab; onChange: (v: S
   const [open, setOpen] = useState(false)
   return (
     <>
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ color: 'inherit' }} onClick={e => { e.stopPropagation(); setOpen(!open) }}>
-        <path d="m6 9 6 6 6-6" />
-      </svg>
+      <span className={`fchip__chev${open ? ' fchip__chev--open' : ''}`} onClick={e => { e.stopPropagation(); setOpen(!open) }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ color: 'inherit' }}>
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </span>
       {open && (
         <span className="fchip-menu" onClick={e => e.stopPropagation()}>
           {([['open', 'Открытые'], ['all', 'Все'], ['closed', 'Закрытые']] as [StatusTab, string][]).map(([key, label]) => (
@@ -1200,7 +1203,16 @@ export function AdminUsersPage() {
                       <td>
                         <span className="memberrow">
                           <Avatar size="sm" tone="blue" name={user.fullName ?? user.email} />
-                          {user.fullName ?? user.email}
+                          <a
+                            href={`/profile/${user.id}`}
+                            title="Открыть профиль"
+                            onClick={e => {
+                              e.preventDefault()
+                              navigate(`/profile/${user.id}`)
+                            }}
+                          >
+                            {user.fullName ?? user.email}
+                          </a>
                         </span>
                       </td>
                       <td className="table__muted">{user.email}</td>

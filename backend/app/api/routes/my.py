@@ -1,6 +1,7 @@
-"""Эндпоинты для мобильного приложения.
+"""Эндпоинты для мобильного приложения и профиля.
 
 GET  /api/my/incidents        — инциденты, видимые текущему пользователю, по уровням приоритета 4..1
+GET  /api/my/tasks            — задачи текущего пользователя (учитывает роль)
 POST /api/devices             — зарегистрировать FCM-токен устройства для push-уведомлений
 POST /api/devices/unregister  — отвязать токен (при выходе из приложения)
 """
@@ -14,7 +15,7 @@ from pydantic import BaseModel, Field
 from app.api.deps import CurrentUser
 from app.core.config import get_settings
 from app.db.mongo import get_db
-from app.domain.enums import PRIORITIES
+from app.domain.enums import CLOSED, PRIORITIES, RESOLVED, Role
 from app.services import access, presenter
 
 router = APIRouter(tags=["mobile"])
@@ -50,6 +51,36 @@ async def my_incidents(user: CurrentUser, includeResolved: bool = False) -> dict
             for p in LEVELS
         ],
     }
+
+
+async def tasks_for_user(user: dict[str, Any], include_resolved: bool, now: datetime, s: Any) -> list[dict[str, Any]]:
+    """Задачи пользователя с учётом его роли — инциденты, в которых участвует лично он.
+
+    разработчик — где он исполнитель в ITSM или добавлен участником (правила access);
+    тестировщик — инциденты, ждущие проверки (Завершен; с include_resolved — и Закрытые);
+    координатор/админ — принятые им в работу (ack) и где он добавлен участником.
+    """
+    query: dict[str, Any] = {"meta.deletedAt": None}
+    if user["role"] == Role.DEVELOPER:
+        query.update(access.mongo_filter(user))
+        if not include_resolved:
+            query["meta.isActive"] = True
+    elif user["role"] == Role.VIEWER:
+        query["data.stateId"] = {"$in": [RESOLVED, CLOSED] if include_resolved else [RESOLVED]}
+    else:
+        query["$or"] = [{"ack.userId": user["_id"]}, {"members": user["_id"]}]
+        if not include_resolved:
+            query["meta.isActive"] = True
+    cards = [presenter.card(d, now, s) async for d in get_db().incidents.find(query)]
+    cards.sort(key=presenter.sort_key)
+    return cards
+
+
+@router.get("/my/tasks")
+async def my_tasks(user: CurrentUser, includeResolved: bool = False) -> dict[str, Any]:
+    s, now = get_settings(), datetime.now(UTC)
+    cards = await tasks_for_user(user, includeResolved, now, s)
+    return {"serverTime": now, "role": user["role"], "total": len(cards), "items": cards}
 
 
 class DeviceIn(BaseModel):

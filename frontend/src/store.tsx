@@ -145,6 +145,7 @@ function makeInitialState(): State {
 export type Action =
   | { type: 'AUTH_START' }
   | { type: 'AUTH_SUCCESS'; user: User }
+  | { type: 'SET_USER'; user: User }
   | { type: 'AUTH_FAIL'; message: string }
   | { type: 'AUTH_CHECKED' }
   | { type: 'AUTH_LOGOUT' }
@@ -186,6 +187,8 @@ function reducer(state: State, action: Action): State {
       return { ...state, authInProgress: true, authError: null }
     case 'AUTH_SUCCESS':
       return { ...state, user: action.user, authInProgress: false, authError: null, authChecking: false, bootError: null }
+    case 'SET_USER':
+      return { ...state, user: action.user }
     case 'AUTH_FAIL':
       return { ...state, authInProgress: false, authError: action.message }
     case 'AUTH_CHECKED':

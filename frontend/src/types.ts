@@ -217,6 +217,15 @@ export interface IncidentsResponse {
   perPage: number
 }
 
+/** Настройки уведомлений пользователя: каналы + включённые виды событий. */
+export interface NotificationSettings {
+  inApp: boolean
+  push: boolean
+  telegram: boolean
+  email: boolean
+  kinds: Record<string, boolean>
+}
+
 export interface User {
   id: string
   email: string
@@ -225,9 +234,23 @@ export interface User {
   itsmLogin: string | null
   team: string | null
   telegramChatId: string | null
-  notificationSettings: Record<string, unknown>
+  notificationSettings: NotificationSettings
   createdAt: string | null
   deletedAt: string | null
+}
+
+/** GET /me: пользователь + справочник видов уведомлений (kind → русское название). */
+export interface MeResponse extends User {
+  notificationKinds: Record<string, string>
+}
+
+/** PATCH /me: правки своего профиля; пароль меняется парой с текущим. */
+export interface MePatch {
+  fullName?: string
+  telegramChatId?: string | null
+  notificationSettings?: NotificationSettings
+  currentPassword?: string
+  newPassword?: string
 }
 
 export interface TokenPair {
@@ -291,6 +314,14 @@ export interface MyIncidentsResponse {
   role: Role
   total: number
   levels: { priorityId: number; title: string; name: string; count: number; items: Card[] }[]
+}
+
+/** GET /my/tasks: инциденты, в которых участвует текущий пользователь (учитывает роль). */
+export interface MyTasksResponse {
+  serverTime: string
+  role: Role
+  total: number
+  items: Card[]
 }
 
 // ---------------- чат с ИИ-агентом BigDad ----------------
