@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     login_rate_limit_per_min: int = 10
     # публичный эндпоинт регистрации считает bcrypt на каждый запрос — лимит строже, чем у входа
     register_rate_limit_per_min: int = 5
+    # одноразовая ссылка-приглашение на ветку живёт в Redis до использования или до конца TTL
+    invite_ttl_hours: int = 72
     bootstrap_admin_email: str = "admin@example.com"
     bootstrap_admin_password: str = "admin12345"
 

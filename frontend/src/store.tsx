@@ -16,6 +16,7 @@ import type {
   RegistrationRequest,
   StatsResponse,
   ToastItem,
+  TokenPair,
   User,
   WsEnvelope,
 } from './types'
@@ -271,6 +272,8 @@ interface AppContextValue {
   state: State
   dispatch: Dispatch<Action>
   login: (email: string, password: string, remember?: boolean) => Promise<void>
+  /** Сессия получена вне входа (регистрация по приглашению) — сохраняем токены и входим. */
+  loginWithPair: (pair: TokenPair, remember?: boolean) => Promise<void>
   logout: () => Promise<void>
   register: (email: string, password: string, fullName: string) => Promise<RegistrationRequest>
   refreshDashboard: () => Promise<void>
@@ -528,14 +531,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return dispose
   }, [user, refreshDashboard, refreshBoard, refreshStats, scheduleDashboardRefresh, showToast])
 
+  const loginWithPair = useCallback(
+    async (pair: TokenPair, remember = true) => {
+      storeTokens(pair.accessToken, pair.refreshToken, remember)
+      await boot(pair.user)
+      navigate(pair.user.role === 'developer' ? '/dev' : pair.user.role === 'viewer' ? '/qa' : '/')
+    },
+    [boot],
+  )
+
   const login = useCallback(
     async (email: string, password: string, remember = true) => {
       dispatch({ type: 'AUTH_START' })
       try {
         const pair = await api.login(email, password)
-        storeTokens(pair.accessToken, pair.refreshToken, remember)
-        await boot(pair.user)
-        navigate(pair.user.role === 'developer' ? '/dev' : pair.user.role === 'viewer' ? '/qa' : '/')
+        await loginWithPair(pair, remember)
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
           dispatch({ type: 'AUTH_FAIL', message: 'Неверная почта или пароль' })
@@ -547,7 +557,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [boot],
+    [loginWithPair],
   )
 
   const logout = useCallback(async () => {
@@ -688,6 +698,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       state,
       dispatch,
       login,
+      loginWithPair,
       logout,
       register,
       refreshDashboard,
@@ -700,7 +711,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       doUnfreeze,
       showToast,
     }),
-    [state, login, logout, register, refreshDashboard, refreshBoard, refreshStats, doTransition, doAck, doAssign, doFreeze, doUnfreeze, showToast],
+    [state, login, loginWithPair, logout, register, refreshDashboard, refreshBoard, refreshStats, doTransition, doAck, doAssign, doFreeze, doUnfreeze, showToast],
   )
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>

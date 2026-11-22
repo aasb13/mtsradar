@@ -15,6 +15,7 @@ import type {
   DashboardResponse,
   HistoryEvent,
   IncidentDetail,
+  Invite,
   IncidentsResponse,
   MyIncidentsResponse,
   NotificationsResponse,
@@ -174,6 +175,11 @@ export function login(email: string, password: string): Promise<TokenPair> {
 /** Заявка на регистрацию: аккаунт появится после одобрения администратором. */
 export function register(body: { email: string; password: string; fullName: string }): Promise<RegistrationRequest> {
   return request<RegistrationRequest>('/auth/register', { method: 'POST', body })
+}
+
+/** Регистрация по приглашению: аккаунт создаётся сразу с ролью из приглашения, в ответ — сессия. */
+export function registerByInvite(body: { token: string; email: string; password: string; fullName: string }): Promise<TokenPair> {
+  return request<TokenPair>('/registration/invite', { method: 'POST', body })
 }
 
 export function logoutRequest(): Promise<void> {
@@ -504,6 +510,20 @@ export function rejectRegistrationRequest(id: string, reason?: string): Promise<
     method: 'POST',
     body: { reason: reason === '' ? undefined : reason },
   })
+}
+
+// ---------------- приглашения на ветку ----------------
+
+export function createInvite(body: { role: string; itsmLogin?: string }): Promise<Invite> {
+  return request<Invite>('/invites', { method: 'POST', body })
+}
+
+export function fetchInvites(): Promise<Invite[]> {
+  return request<Invite[]>('/invites')
+}
+
+export function revokeInvite(token: string): Promise<void> {
+  return request<void>(`/invites/${encodeURIComponent(token)}`, { method: 'DELETE' })
 }
 
 // ---------------- уведомления ----------------

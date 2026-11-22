@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import * as api from '../api'
 import { formatDurationWords, formatShort, priorityMeta, relativeTime } from '../format'
 import { useApp } from '../store'
-import type { Card, RegistrationRequest, Role, User } from '../types'
-import { PRIORITY_SLA_HOURS, PRIORITIES } from '../types'
+import type { Card, Invite, RegistrationRequest, Role, User } from '../types'
+import { PRIORITY_SLA_HOURS, PRIORITIES, ROLE_LABELS } from '../types'
 import { FilterChipMenu, KpiRow, SLA_LABELS } from './kanban'
 import {
   Avatar,
@@ -14,6 +14,7 @@ import {
   Field,
   FileIcon,
   Input,
+  LinkIcon,
   MailIcon,
   Modal,
   PlusIcon,
@@ -26,19 +27,15 @@ import {
   UserIcon,
 } from '../ui'
 
-const ROLE_LABELS: Record<Role, string> = {
-  admin: 'Администратор',
-  coordinator: 'Координатор',
-  developer: 'Разработчик',
-  viewer: 'Тестировщик',
-}
-
 const ROLE_OPTIONS: { key: Role; label: string }[] = [
   { key: 'coordinator', label: 'Координатор' },
   { key: 'developer', label: 'Разработчик' },
   { key: 'viewer', label: 'Тестировщик' },
   { key: 'admin', label: 'Администратор' },
 ]
+
+// приглашений на роль admin не бывает
+const INVITE_ROLE_OPTIONS = ROLE_OPTIONS.filter(o => o.key !== 'admin')
 
 // ---------------- реестр инцидентов ----------------
 
@@ -901,6 +898,8 @@ export function AdminUsersPage() {
         </div>
       )}
 
+      <InvitesSection />
+
       {inviteOpen && (
         <InviteModal
           onClose={() => setInviteOpen(false)}
@@ -910,6 +909,157 @@ export function AdminUsersPage() {
           }}
         />
       )}
+    </>
+  )
+}
+
+// ---------------- приглашения на ветку ----------------
+
+/** Ссылка собирается на клиенте (бэкенд не знает свой внешний адрес). Роль в ссылке —
+ * только для подсказки на форме регистрации: настоящая роль лежит в токене на сервере. */
+function inviteLink(invite: Invite): string {
+  return `${window.location.origin}${window.location.pathname}#/register?invite=${invite.token}&role=${invite.role}`
+}
+
+function InvitesSection() {
+  const { showToast } = useApp()
+  const [role, setRole] = useState<Role>('coordinator')
+  const [itsmLogin, setItsmLogin] = useState('')
+  const [created, setCreated] = useState<Invite | null>(null)
+  const [invites, setInvites] = useState<Invite[]>([])
+  const [busy, setBusy] = useState(false)
+
+  const reload = async () => {
+    try {
+      setInvites(await api.fetchInvites())
+    } catch (err) {
+      console.error('Не удалось загрузить приглашения', err)
+      showToast('Не удалось загрузить приглашения', 'warning')
+    }
+  }
+
+  useEffect(() => {
+    void reload()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const copy = async (invite: Invite) => {
+    try {
+      await navigator.clipboard.writeText(inviteLink(invite))
+      showToast('Ссылка скопирована — отправьте её сотруднику', 'success')
+    } catch (err) {
+      console.error('Не удалось скопировать ссылку', err)
+      showToast('Не удалось скопировать — выделите и скопируйте ссылку вручную', 'warning')
+    }
+  }
+
+  const create = async () => {
+    if (busy) return
+    const login = itsmLogin.trim()
+    if (role === 'developer' && login === '') {
+      showToast('Для приглашения разработчика нужен логин ITSM', 'warning')
+      return
+    }
+    setBusy(true)
+    try {
+      const invite = await api.createInvite({ role, itsmLogin: login === '' ? undefined : login })
+      setCreated(invite)
+      await reload()
+      showToast('Ссылка готова — она сработает один раз', 'success')
+    } catch (err) {
+      console.error('Не удалось создать приглашение', err)
+      showToast(err instanceof Error && err.message !== '' ? err.message : 'Не удалось создать приглашение', 'warning')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const revoke = async (invite: Invite) => {
+    try {
+      await api.revokeInvite(invite.token)
+      if (created !== null && created.token === invite.token) setCreated(null)
+      await reload()
+      showToast('Приглашение отозвано', 'info')
+    } catch (err) {
+      console.error('Не удалось отозвать приглашение', err)
+      showToast(err instanceof Error && err.message !== '' ? err.message : 'Не удалось отозвать приглашение', 'warning')
+    }
+  }
+
+  return (
+    <>
+      <div className="sectiontitle">
+        <h3>Приглашения</h3>
+        <span style={{ color: 'var(--text-3)', fontSize: 13 }}>
+          Одноразовая ссылка: аккаунт с выбранной ролью создаётся сразу, без заявки
+        </span>
+      </div>
+      <div className="tablecard" style={{ padding: 16 }}>
+        <div className="formrow">
+          <Field label="Роль">
+            <select className="input" value={role} onChange={e => setRole(e.target.value as Role)}>
+              {INVITE_ROLE_OPTIONS.map(o => (
+                <option key={o.key} value={o.key}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {role === 'developer' && (
+            <Field label="Логин ITSM" hint="Как в инцидентах (assignedEmployeeLogin)">
+              <Input value={itsmLogin} onChange={e => setItsmLogin(e.target.value)} placeholder="a.ivanov" />
+            </Field>
+          )}
+        </div>
+        <div style={{ marginTop: 12 }}>
+          <Button variant="primary" disabled={busy} onClick={() => void create()}>
+            <LinkIcon size={15} />
+            Создать ссылку
+          </Button>
+        </div>
+        {created !== null && (
+          <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <Input
+              readOnly
+              value={inviteLink(created)}
+              onFocus={e => e.currentTarget.select()}
+              style={{ flex: 1, fontFamily: 'monospace', fontSize: 12 }}
+            />
+            <Button variant="secondary" onClick={() => void copy(created)}>
+              <LinkIcon size={15} />
+              Скопировать
+            </Button>
+          </div>
+        )}
+        {invites.length === 0 ? (
+          <p style={{ color: 'var(--text-3)', fontSize: 13, marginTop: 12 }}>Активных приглашений нет</p>
+        ) : (
+          <table className="table" style={{ marginTop: 12 }}>
+            <thead>
+              <tr>
+                <th>Роль</th>
+                <th>Логин ITSM</th>
+                <th>Действует до</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {invites.map(invite => (
+                <tr key={invite.token}>
+                  <td style={{ fontWeight: 600 }}>{ROLE_LABELS[invite.role]}</td>
+                  <td className="table__muted">{invite.itsmLogin ?? '—'}</td>
+                  <td className="table__muted">{formatShort(invite.expiresAt)}</td>
+                  <td style={{ textAlign: 'right' }}>
+                    <Button variant="secondary" className="btn--sm" onClick={() => void revoke(invite)}>
+                      Отозвать
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </>
   )
 }

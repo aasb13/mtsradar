@@ -20,6 +20,7 @@ from app.api.routes import (
     auth,
     data_io,
     incidents,
+    invites,
     itsm_mock,
     meta,
     my,
@@ -101,6 +102,7 @@ API = "/api"
 for r in (
     auth.router,
     registration.router,
+    invites.router,
     users.router,
     incidents.router,
     meta.router,

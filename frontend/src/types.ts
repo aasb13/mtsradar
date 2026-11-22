@@ -6,6 +6,14 @@
 
 export type Role = 'admin' | 'coordinator' | 'viewer' | 'developer'
 
+/** Русские названия ролей — общие для админки, чата и регистрации по приглашению. */
+export const ROLE_LABELS: Record<Role, string> = {
+  admin: 'Администратор',
+  coordinator: 'Координатор',
+  developer: 'Разработчик',
+  viewer: 'Тестировщик',
+}
+
 export interface Sla {
   state: 'ok' | 'warning' | 'danger' | 'breached' | 'none' | 'resolved'
   timeLeftSeconds: number | null
@@ -353,4 +361,13 @@ export interface RegistrationRequest {
   decidedAt: string | null
   role: Role | null
   itsmLogin: string | null
+}
+
+/** Одноразовое приглашение на ветку: живёт в Redis до регистрации, отзыва или конца TTL. */
+export interface Invite {
+  token: string
+  role: Role
+  itsmLogin: string | null
+  createdAt: string | null
+  expiresAt: string | null
 }

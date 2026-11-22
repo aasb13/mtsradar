@@ -1,7 +1,9 @@
 import { useState } from 'react'
-import { ApiError } from '../api'
-import { navigate } from '../router'
+import { ApiError, registerByInvite } from '../api'
+import { navigate, routeQuery } from '../router'
 import { useApp } from '../store'
+import { ROLE_LABELS } from '../types'
+import type { Role } from '../types'
 import { BellIcon, SparkIcon, ClockIcon, AlertIcon } from '../ui'
 
 function AuthLayout({ children }: { children: React.ReactNode }) {
@@ -146,13 +148,20 @@ export function LoginPage() {
 }
 
 export function RegisterPage() {
-  const { register, showToast } = useApp()
+  const { register, loginWithPair, showToast } = useApp()
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // режим приглашения: ссылка вида /#/register?invite=<токен> (&role= — только для подсказки,
+  // настоящая роль хранится в токене на сервере и не может быть повышена через URL)
+  const [invite] = useState(() => {
+    const query = routeQuery()
+    const token = query.get('invite')
+    return token === null ? null : { token, role: query.get('role') }
+  })
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -172,13 +181,27 @@ export function RegisterPage() {
     setError(null)
     setBusy(true)
     try {
-      await register(email.trim().toLowerCase(), password, fullName.trim())
-      showToast('Заявка на регистрацию отправлена', 'success')
-      navigate('/pending')
+      if (invite !== null) {
+        // приглашение: аккаунт создаётся сразу, сессия начинается без ожидания одобрения
+        const pair = await registerByInvite({
+          token: invite.token,
+          email: email.trim().toLowerCase(),
+          password,
+          fullName: fullName.trim(),
+        })
+        showToast('Аккаунт создан — добро пожаловать в Радар', 'success')
+        await loginWithPair(pair)
+      } else {
+        await register(email.trim().toLowerCase(), password, fullName.trim())
+        showToast('Заявка на регистрацию отправлена', 'success')
+        navigate('/pending')
+      }
     } catch (err) {
+      // на экранах входа тосты не рендерятся (ToastStack живёт только у авторизованных),
+      // поэтому ошибки формы показываем баннером — как в обычной регистрации
       if (err instanceof ApiError) setError(err.message)
       else {
-        console.error('Не удалось отправить заявку', err)
+        console.error('Не удалось зарегистрироваться', err)
         setError('Сервер недоступен. Попробуйте ещё раз.')
       }
     } finally {
@@ -186,10 +209,21 @@ export function RegisterPage() {
     }
   }
 
+  const inviteRoleLabel =
+    invite !== null && invite.role !== null && invite.role in ROLE_LABELS ? ROLE_LABELS[invite.role as Role] : null
+
   return (
     <AuthLayout>
       <h1>Регистрация</h1>
-      <p className="auth__form-sub">Создайте аккаунт — роль назначит администратор</p>
+      <p className="auth__form-sub">
+        {invite === null ? (
+          'Создайте аккаунт — роль назначит администратор'
+        ) : inviteRoleLabel !== null ? (
+          <>Регистрация по приглашению (роль: {inviteRoleLabel})</>
+        ) : (
+          'Регистрация по приглашению'
+        )}
+      </p>
       <form onSubmit={submit}>
         <label className="field">
           <span className="field__label">ФИО</span>
@@ -213,7 +247,7 @@ export function RegisterPage() {
         </label>
         {error !== null && <div className="authbanner authbanner--error">{error}</div>}
         <button className="btn btn--primary" style={{ width: '100%' }} type="submit" disabled={busy}>
-          {busy ? 'Отправляем…' : 'Создать аккаунт'}
+          {busy ? (invite !== null ? 'Создаём аккаунт…' : 'Отправляем…') : 'Создать аккаунт'}
         </button>
       </form>
       <p className="auth__alt">
