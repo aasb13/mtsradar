@@ -16,6 +16,7 @@ import {
   FileIcon,
   Input,
   LinkIcon,
+  Loading,
   Markdown,
   Modal,
   RefreshIcon,
@@ -237,7 +238,7 @@ export function DevPage() {
           />
           <p className="listlabel">{tab === 'active' ? 'Назначены мне' : tab === 'review' ? 'Ждут проверки' : 'Завершены'} · {filtered.length}</p>
           {loading ? (
-            <p className="loading-text" style={{ color: 'var(--text-2)' }}>Загрузка…</p>
+            <Loading />
           ) : filtered.length === 0 ? (
             <EmptyState title="Инцидентов нет" note="Новые назначения появятся здесь и придут уведомлением" />
           ) : (
@@ -495,7 +496,7 @@ export function QaPage() {
           />
           <p className="listlabel">{tab === 'review' ? 'Ждут проверки' : tab === 'done' ? 'Закрыты' : 'Вернулись в работу'} · {filtered.length}</p>
           {loading ? (
-            <p className="loading-text" style={{ color: 'var(--text-2)' }}>Загрузка…</p>
+            <Loading />
           ) : filtered.length === 0 ? (
             <EmptyState title="Инцидентов нет" note={tab === 'review' ? 'Новые отчёты разработчиков появятся здесь' : undefined} />
           ) : (

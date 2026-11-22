@@ -5,7 +5,7 @@ import { filterCards, useApp } from '../store'
 import { SyncBadge, SyncSub } from './shell'
 import type { Card } from '../types'
 import { BOARD_COLUMNS, TRANSITIONS } from '../types'
-import { ChevronDownIcon, DotsIcon, EyeIcon, SEARCH_MIN_OPTIONS, SeverityBadge, SlaChip, SnowflakeIcon, TeamIcon, fuzzyMatch } from '../ui'
+import { ChevronDownIcon, DotsIcon, EyeIcon, Loading, SEARCH_MIN_OPTIONS, SeverityBadge, SlaChip, SnowflakeIcon, TeamIcon, fuzzyMatch } from '../ui'
 
 const PRIORITY_TONE_BG: Record<number, string> = {
   4: 'var(--red)',
@@ -247,7 +247,7 @@ export function KanbanPage() {
 
   // первый BOOT_OK ещё не пришёл — не рисуем пустую доску (после хуков: их порядок не должен зависеть от данных)
   if (state.dictionaries === null) {
-    return <p className="loading-text" style={{ color: 'var(--text-2)', padding: 24 }}>Загрузка…</p>
+    return <Loading style={{ padding: 24 }} />
   }
 
   const columns = BOARD_COLUMNS.map(column => ({

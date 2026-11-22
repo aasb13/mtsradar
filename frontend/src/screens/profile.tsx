@@ -6,7 +6,7 @@ import { navigate } from '../router'
 import { useApp } from '../store'
 import { ROLE_LABELS } from '../types'
 import type { Card, MeResponse, NotificationSettings, Role, User } from '../types'
-import { Avatar, Button, CheckIcon, EmptyState, Field, Input, SeverityBadge, SlaChip, StatusPill } from '../ui'
+import { Avatar, Button, CheckIcon, EmptyState, Field, Input, Loading, SeverityBadge, SlaChip, StatusPill } from '../ui'
 
 const TASKS_NOTE: Record<Role, string> = {
   developer: 'Инциденты, где он исполнитель в ITSM или добавлен участником',
@@ -137,16 +137,13 @@ export function ProfilePage({ userId }: { userId?: string }) {
 
   const profileUser: User | null = isSelf ? me : other
   if (profileUser === null) {
-    return (
-      <p className="loading-text" style={{ paddingTop: 40 }}>
-        {isSelf
-          ? meError
-            ? 'Не удалось загрузить профиль — обновите страницу'
-            : 'Загрузка…'
-          : otherError
-            ? 'Профиль не найден — пользователь заблокирован или удалён'
-            : 'Загрузка…'}
+    const error = isSelf ? meError : otherError
+    return error ? (
+      <p style={{ paddingTop: 40 }}>
+        {isSelf ? 'Не удалось загрузить профиль — обновите страницу' : 'Профиль не найден — пользователь заблокирован или удалён'}
       </p>
+    ) : (
+      <Loading style={{ paddingTop: 40 }} />
     )
   }
 
@@ -268,7 +265,7 @@ export function ProfilePage({ userId }: { userId?: string }) {
       <CheckRow on={includeResolved} label="Показать решённые и закрытые" onToggle={() => setIncludeResolved(v => !v)} />
       <p className="listlabel">Всего · {tasks.length}</p>
       {tasksLoading ? (
-        <p className="loading-text" style={{ color: 'var(--text-2)' }}>Загрузка…</p>
+        <Loading />
       ) : tasks.length === 0 ? (
         <EmptyState title="Задач нет" note={includeResolved ? undefined : 'Новые назначения появятся здесь и придут уведомлением'} />
       ) : (

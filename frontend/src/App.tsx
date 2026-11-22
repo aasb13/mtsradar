@@ -13,6 +13,7 @@ import { ProfilePage } from './screens/profile'
 import { AssignModal, FreezeModal, IncidentPanel } from './screens/panel'
 import { navigate, useRoute } from './router'
 import type { Role } from './types'
+import { Loading } from './ui'
 
 const HOME_BY_ROLE: Record<Role, string> = {
   coordinator: '/',
@@ -24,7 +25,7 @@ const HOME_BY_ROLE: Record<Role, string> = {
 function Splash() {
   return (
     <div className="splash">
-      <p className="splash__text">Загрузка…</p>
+      <Loading size={30} />
     </div>
   )
 }

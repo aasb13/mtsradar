@@ -18,6 +18,7 @@ import {
   FileIcon,
   Input,
   LinkIcon,
+  Loading,
   MailIcon,
   Modal,
   PlusIcon,
@@ -159,7 +160,7 @@ export function AdminIncidentsPage() {
       </div>
 
       {loading ? (
-        <p className="loading-text" style={{ color: 'var(--text-2)', padding: 24 }}>Загрузка…</p>
+        <Loading style={{ padding: 24 }} />
       ) : items.length === 0 ? (
         <EmptyState title="Инцидентов нет" note="Все задачи обработаны или ещё не поступили" />
       ) : (
@@ -1162,7 +1163,7 @@ export function AdminUsersPage() {
       </div>
 
       {loading ? (
-        <p className="loading-text" style={{ color: 'var(--text-2)', padding: 24 }}>Загрузка…</p>
+        <Loading style={{ padding: 24 }} />
       ) : tab === 'pending' && requests.length === 0 ? (
         <EmptyState title="Заявок на регистрацию нет" note="Новые заявки появятся здесь сразу после отправки формы регистрации" />
       ) : (
@@ -1615,7 +1616,7 @@ export function AdminDonePage() {
 
       <div style={{ height: 28 }} />
       {loading ? (
-        <p className="loading-text" style={{ color: 'var(--text-2)', padding: 24 }}>Загрузка…</p>
+        <Loading style={{ padding: 24 }} />
       ) : items.length === 0 ? (
         <EmptyState title="Пока нет закрытых инцидентов" note="Закрытые появятся после проверки исправлений" />
       ) : (

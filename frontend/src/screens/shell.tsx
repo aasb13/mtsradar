@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { initials, pluralize, relativeTime } from '../format'
 import { navigate, useRoute } from '../router'
 import { useApp } from '../store'
-import { BellIcon, CloseIcon, LogoutIcon, MoonIcon, SearchIcon, Spinner, StatsIcon, SunIcon, UserIcon } from '../ui'
+import { BellIcon, CloseIcon, Loading, LogoutIcon, MoonIcon, SearchIcon, StatsIcon, SunIcon, UserIcon } from '../ui'
 import * as api from '../api'
 import type { Notification, Role, ToastItem } from '../types'
 
@@ -162,10 +162,7 @@ function BellMenu({ onClose }: { onClose: () => void }) {
         </button>
       </div>
       {loading ? (
-        <div className="bell-menu__empty bell-menu__loading">
-          <Spinner size={20} />
-          <span>Загрузка…</span>
-        </div>
+        <Loading className="bell-menu__empty" />
       ) : items.length === 0 ? (
         <div className="bell-menu__empty">Уведомлений нет — всё спокойно</div>
       ) : (
@@ -437,9 +434,10 @@ export function SyncBadge() {
       : state.connection === 'connecting'
         ? 'Подключение…'
         : 'Переподключение…'
+  const connecting = state.connection !== 'online'
   return (
-    <span className="onlinebadge" style={state.connection !== 'online' ? { background: 'rgba(245,197,24,0.25)', color: '#b7791f' } : undefined}>
-      <span className="onlinebadge__dot" style={state.connection !== 'online' ? { background: 'var(--yellow)' } : undefined} />
+    <span className={`onlinebadge${connecting ? ' onlinebadge--connecting' : ''}`} style={connecting ? { background: 'rgba(245,197,24,0.25)', color: '#b7791f' } : undefined}>
+      <span className="onlinebadge__dot" style={connecting ? { background: 'var(--yellow)' } : undefined} />
       {label}
     </span>
   )

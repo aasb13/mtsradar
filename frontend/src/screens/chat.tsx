@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as api from '../api'
 import { relativeTime } from '../format'
 import { navigate, routeQuery } from '../router'
@@ -17,6 +17,7 @@ import {
   Modal,
   PlusIcon,
   SendIcon,
+  Spinner,
   SparkIcon,
   Textarea,
   TrashIcon,
@@ -45,7 +46,12 @@ export function ChatPage() {
   const [deleting, setDeleting] = useState<ChatSession | null>(null)
   const [deletingBusy, setDeletingBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const feedRef = useRef<HTMLDivElement>(null)
+  // лента не дёргается, пока пользователь читает историю: автопрокрутка только у нижнего края
+  const pinnedToBottom = useRef(true)
+  // SSE приходит по токенам: копим текст в ref и обновляем экран один раз за кадр
+  const liveRef = useRef<LiveReply | null>(null)
+  const liveFrame = useRef<number | null>(null)
   // отложенный вопрос из панели инцидента («Обсудить в чате»); state, а не ref:
   // ставится из обработчика popstate, и эффект отправки должен на это отреагировать
   const [queuedDraft, setQueuedDraft] = useState<{ incidentId: string; text: string } | null>(null)
@@ -56,6 +62,22 @@ export function ChatPage() {
     setActiveId(id)
   }, [])
   const aiEnabled = state.dictionaries?.aiEnabled !== false
+
+  const flushLive = useCallback(() => {
+    liveFrame.current = null
+    setStream(liveRef.current === null ? null : { ...liveRef.current })
+  }, [])
+
+  const scheduleLive = useCallback(() => {
+    if (liveFrame.current === null) liveFrame.current = requestAnimationFrame(flushLive)
+  }, [flushLive])
+
+  useEffect(
+    () => () => {
+      if (liveFrame.current !== null) cancelAnimationFrame(liveFrame.current)
+    },
+    [],
+  )
 
   const activeSession = useMemo(
     () => sessions.find(s => s.id === activeId) ?? null,
@@ -76,6 +98,7 @@ export function ChatPage() {
   const openSession = useCallback(
     async (id: string, replaceUrl: boolean) => {
       activate(id)
+      pinnedToBottom.current = true
       setReplyTo(null)
       try {
         const res = await api.fetchChatSession(id)
@@ -115,9 +138,20 @@ export function ChatPage() {
             delivered = true
             setMessages(prev => [...prev, m])
           },
-          start: id => setStream({ id, text: '', actions: [] }),
-          text: chunk => setStream(s => (s === null ? s : { ...s, text: s.text + chunk })),
-          tool: t => setStream(s => (s === null ? s : { ...s, actions: [...s.actions, t] })),
+          start: id => {
+            liveRef.current = { id, text: '', actions: [] }
+            scheduleLive()
+          },
+          text: chunk => {
+            if (liveRef.current === null) return
+            liveRef.current.text += chunk
+            scheduleLive()
+          },
+          tool: t => {
+            if (liveRef.current === null) return
+            liveRef.current.actions.push(t)
+            scheduleLive()
+          },
           done: (m, session) => {
             // итог может прийти и по WebSocket раньше стрима — не дублируем
             setMessages(prev => (prev.some(x => x.id === m.id) ? prev : [...prev, m]))
@@ -133,11 +167,16 @@ export function ChatPage() {
         )
         if (!delivered) onUndelivered?.()
       } finally {
+        if (liveFrame.current !== null) {
+          cancelAnimationFrame(liveFrame.current)
+          liveFrame.current = null
+        }
+        liveRef.current = null
         setStream(null)
         setWaiting(false)
       }
     },
-    [showToast],
+    [scheduleLive, showToast],
   )
 
   // начальная загрузка + открытие сессии из ссылки и «Обсудить в чате» (?s=… / ?draft=…)
@@ -185,6 +224,7 @@ export function ChatPage() {
         activate(res.session.id)
         setMessages([])
         navigate(`/chat?s=${res.session.id}`, true)
+        pinnedToBottom.current = true
         await runExchange(res.session.id, question, [], null, () => setText(question))
       } catch (err) {
         console.error('Не удалось начать чат с BigDad', err)
@@ -221,12 +261,20 @@ export function ChatPage() {
     return () => window.removeEventListener('radar:chat', onChat)
   }, [activeId])
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [messages, waiting, stream])
+  useLayoutEffect(() => {
+    const feed = feedRef.current
+    if (feed !== null && pinnedToBottom.current) feed.scrollTop = feed.scrollHeight
+  }, [messages, stream, waiting])
+
+  const onFeedScroll = () => {
+    const feed = feedRef.current
+    if (feed === null) return
+    pinnedToBottom.current = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80
+  }
 
   const newSession = () => {
     activate(null)
+    pinnedToBottom.current = true
     setMessages([])
     setReplyTo(null)
     setText('')
@@ -291,6 +339,7 @@ export function ChatPage() {
     setText('')
     setPending([])
     setReplyTo(null)
+    pinnedToBottom.current = true
     setWaiting(true)
     try {
       let sid = activeId
@@ -451,7 +500,7 @@ export function ChatPage() {
               disabled={uploading || !aiEnabled}
               onClick={() => fileRef.current?.click()}
             >
-              <FileIcon size={16} />
+              {uploading ? <Spinner size={16} /> : <FileIcon size={16} />}
             </button>
             <input
               ref={fileRef}
