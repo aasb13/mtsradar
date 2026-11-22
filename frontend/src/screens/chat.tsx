@@ -13,6 +13,7 @@ import {
   DownloadIcon,
   EmptyState,
   FileIcon,
+  Markdown,
   Modal,
   PlusIcon,
   SendIcon,
@@ -384,7 +385,7 @@ export function ChatPage() {
                   </div>
                 )}
                 {stream.text !== '' ? (
-                  <p className="bubble__text">{stream.text}</p>
+                  <Markdown text={stream.text} />
                 ) : (
                   <p className="chat__thinking">
                     BigDad думает<span className="chat__dots"><i /><i /><i /></span>
@@ -531,7 +532,7 @@ function MessageRow({
       )}
       <div className={`bubble ${mine ? 'bubble--user' : 'bubble--assistant'}`}>
         {message.replyTo !== null && <p className="bubble__quote">↩ {message.replyTo.snippet}</p>}
-        <p className="bubble__text">{message.text}</p>
+        {mine ? <p className="bubble__text">{message.text}</p> : <Markdown text={message.text} />}
         {message.actions.length > 0 && (
           <div className="bubble__actions">
             {message.actions.map((a, i) => (

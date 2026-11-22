@@ -6,7 +6,7 @@ import { navigate } from '../router'
 import { useApp } from '../store'
 import type { FreezeRequest } from '../store'
 import type { AiAlternative, Card, Comment, HistoryEvent, IncidentDetail } from '../types'
-import { ArrowRightIcon, Avatar, Button, CloseIcon, CommentIcon, LinkIcon, Modal, RefreshIcon, Select, SeverityBadge, SlaChip, SnowflakeIcon, SparkIcon, StatusPill, stringOptions, Textarea, TeamIcon } from '../ui'
+import { ArrowRightIcon, Avatar, Button, CloseIcon, CommentIcon, LinkIcon, Markdown, Modal, RefreshIcon, Select, SeverityBadge, SlaChip, SnowflakeIcon, SparkIcon, StatusPill, stringOptions, Textarea, TeamIcon } from '../ui'
 
 const HISTORY_TEXT: Record<string, string> = {
   created: 'Инцидент зарегистрирован',
@@ -327,7 +327,7 @@ export function IncidentPanel() {
               </button>
             </div>
             {!aiEnabled && <p className="bigdad__offnote">BigDad не подключён — ИИ-анализ недоступен</p>}
-            {ai.summary !== null && <p className="bigdad__text">{ai.summary}</p>}
+            {ai.summary !== null && <Markdown className="bigdad__text" text={ai.summary} />}
             {ai.riskScore !== null && (
               <>
                 <div className="bigdad__risk">
@@ -337,7 +337,7 @@ export function IncidentPanel() {
                 <div className="riskbar">
                   <span className="riskbar__fill" style={{ width: `${Math.min(100, ai.riskScore)}%` }} />
                 </div>
-                {ai.riskReason !== null && <p className="bigdad__note">{ai.riskReason}</p>}
+                {ai.riskReason !== null && <Markdown className="bigdad__note" text={ai.riskReason} />}
               </>
             )}
             {ai.recommendedGroup !== null && (
@@ -347,7 +347,7 @@ export function IncidentPanel() {
                 </span>
                 <div>
                   <b>Кому передать: {ai.recommendedGroup}</b>
-                  {ai.recommendedReason !== null && <p>{ai.recommendedReason}</p>}
+                  {ai.recommendedReason !== null && <Markdown text={ai.recommendedReason} />}
                 </div>
               </div>
             )}

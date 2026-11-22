@@ -4,7 +4,7 @@ import { useApp } from '../store'
 import { downloadExport, fetchTeamDescriptions, refreshTeamDescriptions } from '../api'
 import { PRIORITY_SLA_HOURS } from '../types'
 import type { TeamAiDescription } from '../types'
-import { Avatar, Button, DownloadIcon, SeverityBadge, SparkIcon } from '../ui'
+import { Avatar, Button, DownloadIcon, Markdown, SeverityBadge, SparkIcon } from '../ui'
 
 type Period = 'week' | 'month' | 'quarter'
 
@@ -349,10 +349,12 @@ export function StatsPage() {
                 {descriptions[team.name] !== undefined && (
                   <tr className="teamrow-ai">
                     <td colSpan={6}>
-                      <span className="teamrow-ai__spark">
-                        <SparkIcon size={13} />
-                      </span>
-                      {descriptions[team.name].text}
+                      <div className="teamrow-ai__row">
+                        <span className="teamrow-ai__spark">
+                          <SparkIcon size={13} />
+                        </span>
+                        <Markdown text={descriptions[team.name].text} />
+                      </div>
                     </td>
                   </tr>
                 )}

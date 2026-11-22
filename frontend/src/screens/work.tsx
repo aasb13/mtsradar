@@ -16,6 +16,7 @@ import {
   FileIcon,
   Input,
   LinkIcon,
+  Markdown,
   Modal,
   RefreshIcon,
   SendIcon,
@@ -115,7 +116,7 @@ function IncidentDetailBox({ detail, card, actions }: { detail: IncidentDetail |
             </span>
           </div>
           {!aiEnabled && <p className="bigdad__offnote">BigDad не подключён — ИИ-анализ недоступен</p>}
-          {ai.summary !== null && <p className="bigdad__text">{ai.summary}</p>}
+          {ai.summary !== null && <Markdown className="bigdad__text" text={ai.summary} />}
           {ai.riskScore !== null && (
             <>
               <div className="bigdad__risk">

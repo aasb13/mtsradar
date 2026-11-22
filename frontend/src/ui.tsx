@@ -1,5 +1,7 @@
 import type { ButtonHTMLAttributes, CSSProperties, InputHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, ReactNode, TextareaHTMLAttributes } from 'react'
 import { useEffect, useId, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { initials, isUnassigned, liveSla, priorityMeta } from './format'
 import type { Card } from './types'
 
@@ -346,6 +348,27 @@ export function EmptyState({ title, note }: { title: string; note?: string }) {
       </span>
       <p className="empty__title">{title}</p>
       {note !== undefined && <p className="empty__note">{note}</p>}
+    </div>
+  )
+}
+
+// ---------------- markdown (ответы BigDad) ----------------
+
+function MarkdownLink({ href, children }: { href?: string; children?: ReactNode }) {
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  )
+}
+
+/** Markdown от BigDad: GFM (таблицы, чек-листы), ссылки в новой вкладке. Сырой HTML не рендерится. */
+export function Markdown({ text, className = '' }: { text: string; className?: string }) {
+  return (
+    <div className={`md ${className}`}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: MarkdownLink }}>
+        {text}
+      </ReactMarkdown>
     </div>
   )
 }
