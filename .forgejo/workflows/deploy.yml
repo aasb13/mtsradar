@@ -9,7 +9,8 @@ on:
 
 jobs:
   deploy:
-    runs-on: mtsradar:host
+    # метка раннера на машине деплоя (host-исполнитель настроен в /etc/forgejo-runner-team/config.yaml)
+    runs-on: mtsradar
     steps:
       - uses: actions/checkout@v4
 
