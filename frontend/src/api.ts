@@ -14,6 +14,8 @@ import type {
   MyIncidentsResponse,
   NotificationsResponse,
   StatsResponse,
+  TeamDescriptionsResponse,
+  TeamRecommendation,
   TokenPair,
   User,
 } from './types'
@@ -276,6 +278,21 @@ export function addMember(id: string, userId: string): Promise<unknown> {
 
 export function requestAiRefresh(id: string): Promise<void> {
   return request<void>(`/incidents/${encodeURIComponent(id)}/ai/refresh`, { method: 'POST' })
+}
+
+/** BigDad: рекомендация команды для инцидента (агент работает 10–60 секунд). */
+export function requestTeamRecommendation(id: string): Promise<TeamRecommendation> {
+  return request<TeamRecommendation>(`/incidents/${encodeURIComponent(id)}/ai/team-recommendation`, { method: 'POST' })
+}
+
+// ---------------- ИИ-описания команд (статистика) ----------------
+
+export function fetchTeamDescriptions(): Promise<TeamDescriptionsResponse> {
+  return request<TeamDescriptionsResponse>('/ai/team-descriptions')
+}
+
+export function refreshTeamDescriptions(): Promise<TeamDescriptionsResponse> {
+  return request<TeamDescriptionsResponse>('/ai/team-descriptions', { method: 'POST' })
 }
 
 // ---------------- пользователи ----------------

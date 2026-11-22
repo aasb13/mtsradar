@@ -43,3 +43,4 @@ asyncio_default_test_loop_scope = "session"
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/smoke.py" = ["E501", "E702", "ASYNC230"]  # отладочный сценарий, не продакшен-код
+"app/ai/prompts.py" = ["E501"]  # промпты — прозовые строки, шире 120 символов не рвать

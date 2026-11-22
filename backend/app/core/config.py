@@ -83,6 +83,19 @@ class Settings(BaseSettings):
     fcm_service_account_file: str | None = None
     fcm_api_base: str = "https://fcm.googleapis.com"  # подменяется в тестах заглушкой
 
+    # --- ИИ-агент (BigDad): рекомендация команды + описания команд в статистике ---
+    # OpenAI-совместимый API (…/chat/completions с вызовом функций).
+    # Подойдёт любой провайдер с таким протоколом (GigaChat, OpenRouter, локальный vLLM, …).
+    # Базовый адрес до /v1 (без /chat/completions), например https://openrouter.ai/api/v1
+    llm_api_base: str | None = None
+    llm_api_key: str | None = None
+    llm_model: str | None = None
+    llm_timeout_sec: int = 120
+    # максимум ответов модели за один прогон агента (вызов инструмента = один ответ).
+    # Аналитику команд нужен запас: 22 команды в данных → до ~24 ходов, если модель
+    # не батчит вызовы get_team_profile в одно сообщение
+    llm_max_iterations: int = 40
+
 
 @lru_cache
 def get_settings() -> Settings:

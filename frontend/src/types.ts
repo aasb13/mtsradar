@@ -54,15 +54,43 @@ export interface Card {
   deleted: boolean
 }
 
+export interface AiAlternative {
+  group: string
+  reason: string
+}
+
+export interface TeamRecommendation {
+  recommendedGroup: string
+  reason: string
+  confidence: number
+  alternatives: AiAlternative[]
+  model: string | null
+}
+
 export interface AiDetail {
   summary: string | null
   riskScore: number | null
   riskReason: string | null
   recommendedGroup: string | null
   recommendedReason: string | null
+  recommendedConfidence?: number | null
+  recommendedAlternatives?: AiAlternative[] | null
+  recommendedAt?: string | null
+  recommendedModel?: string | null
   breachForecast: Record<string, unknown> | null
   model: string | null
   stale?: boolean
+}
+
+export interface TeamAiDescription {
+  group: string
+  text: string
+  model: string | null
+  updatedAt: string
+}
+
+export interface TeamDescriptionsResponse {
+  descriptions: TeamAiDescription[]
 }
 
 export interface HistoryEvent {

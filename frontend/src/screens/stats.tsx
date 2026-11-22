@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { formatMinutes } from '../format'
 import { useApp } from '../store'
-import { exportUrl } from '../api'
+import { exportUrl, fetchTeamDescriptions, refreshTeamDescriptions } from '../api'
 import { PRIORITY_SLA_HOURS } from '../types'
-import { Avatar, DownloadIcon, SeverityBadge } from '../ui'
+import type { TeamAiDescription } from '../types'
+import { Avatar, Button, DownloadIcon, SeverityBadge, SparkIcon } from '../ui'
 
 type Period = 'week' | 'month' | 'quarter'
 
@@ -62,6 +63,39 @@ export function StatsPage() {
   const [period, setPeriod] = useState<Period>('month')
   const cards = useMemo(() => [...state.cards.values()], [state.cards])
   const resolvedCards = useMemo(() => cards.filter(c => c.isResolved), [cards])
+  const [descriptions, setDescriptions] = useState<Record<string, TeamAiDescription>>({})
+  const [aiBusy, setAiBusy] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetchTeamDescriptions()
+        if (!cancelled) setDescriptions(Object.fromEntries(res.descriptions.map(d => [d.group, d])))
+      } catch (err) {
+        console.error('Не удалось загрузить ИИ-описания команд', err)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const refreshDescriptions = async () => {
+    if (aiBusy) return
+    setAiBusy(true)
+    setAiError(null)
+    try {
+      const res = await refreshTeamDescriptions()
+      setDescriptions(Object.fromEntries(res.descriptions.map(d => [d.group, d])))
+    } catch (err) {
+      console.error('Не удалось обновить ИИ-описания команд', err)
+      setAiError('BigDad сейчас не смог описать команды, попробуйте ещё раз')
+    } finally {
+      setAiBusy(false)
+    }
+  }
 
   const windowStart = useMemo(() => {
     const d = new Date(state.now)
@@ -266,7 +300,16 @@ export function StatsPage() {
         <DailyChart points={points} />
       </div>
 
-      <h3 style={{ fontSize: 18, fontWeight: 800, margin: '8px 0 16px' }}>Команды</h3>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '8px 0 16px' }}>
+        <h3 style={{ fontSize: 18, fontWeight: 800, margin: 0 }}>Команды</h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {aiError !== null && <span style={{ color: 'var(--red)', fontSize: 13 }}>{aiError}</span>}
+          <Button variant="secondary" disabled={aiBusy} onClick={() => void refreshDescriptions()}>
+            <SparkIcon size={14} />
+            {aiBusy ? 'BigDad описывает команды…' : 'ИИ-описания команд'}
+          </Button>
+        </div>
+      </div>
       <div className="tablecard" style={{ marginBottom: 28 }}>
         <table className="table">
           <thead>
@@ -281,21 +324,33 @@ export function StatsPage() {
           </thead>
           <tbody>
             {teams.map(team => (
-              <tr key={team.name}>
-                <td className="table__title">{team.name}</td>
-                <td>{team.active}</td>
-                <td>{team.resolved}</td>
-                <td>{formatMinutes(team.avg)}</td>
-                <td>{team.metRate === null ? '—' : `${team.metRate}%`}</td>
-                <td>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div className="loadbar" style={{ flex: 1, marginTop: 0 }}>
-                      <span className="loadbar__fill loadbar__fill--violet" style={{ width: `${Math.round((team.active / maxTeamLoad) * 100)}%` }} />
+              <Fragment key={team.name}>
+                <tr>
+                  <td className="table__title">{team.name}</td>
+                  <td>{team.active}</td>
+                  <td>{team.resolved}</td>
+                  <td>{formatMinutes(team.avg)}</td>
+                  <td>{team.metRate === null ? '—' : `${team.metRate}%`}</td>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div className="loadbar" style={{ flex: 1, marginTop: 0 }}>
+                        <span className="loadbar__fill loadbar__fill--violet" style={{ width: `${Math.round((team.active / maxTeamLoad) * 100)}%` }} />
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 600, minWidth: 38 }}>{Math.round((team.active / maxTeamLoad) * 100)}%</span>
                     </div>
-                    <span style={{ fontSize: 13, fontWeight: 600, minWidth: 38 }}>{Math.round((team.active / maxTeamLoad) * 100)}%</span>
-                  </div>
-                </td>
-              </tr>
+                  </td>
+                </tr>
+                {descriptions[team.name] !== undefined && (
+                  <tr className="teamrow-ai">
+                    <td colSpan={6}>
+                      <span className="teamrow-ai__spark">
+                        <SparkIcon size={13} />
+                      </span>
+                      {descriptions[team.name].text}
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             ))}
             {teams.length === 0 && (
               <tr>

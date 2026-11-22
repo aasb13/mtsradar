@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import * as api from '../api'
 import { formatShort, formatTimeLeft, liveSla, relativeTime, shortName, slaBigValue } from '../format'
 import { useApp } from '../store'
-import type { Card, Comment, HistoryEvent, IncidentDetail } from '../types'
+import type { AiAlternative, Card, Comment, HistoryEvent, IncidentDetail } from '../types'
 import { Avatar, Button, CloseIcon, CommentIcon, LinkIcon, Modal, RefreshIcon, SeverityBadge, SlaChip, SnowflakeIcon, SparkIcon, StatusPill, Textarea, TeamIcon } from '../ui'
 
 const HISTORY_TEXT: Record<string, string> = {
@@ -392,6 +392,13 @@ interface DevRow {
   done: number
 }
 
+interface Recommendation {
+  group: string
+  reason: string | null
+  confidence: number | null
+  alternatives: AiAlternative[]
+}
+
 export function AssignModal() {
   const { state, dispatch, doAssign } = useApp()
   const id = state.assignId
@@ -400,7 +407,9 @@ export function AssignModal() {
   const [executor, setExecutor] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [devs, setDevs] = useState<DevRow[]>([])
-  const [recommended, setRecommended] = useState<{ group: string; reason: string | null } | null>(null)
+  const [recommended, setRecommended] = useState<Recommendation | null>(null)
+  const [aiBusy, setAiBusy] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
 
   useEffect(() => {
     if (card !== null) {
@@ -412,15 +421,34 @@ export function AssignModal() {
   useEffect(() => {
     if (id === null) return
     let cancelled = false
+    setRecommended(null)
+    setAiError(null)
+    setAiBusy(false)
     void (async () => {
       try {
         const detail = await api.fetchIncident(id)
         if (cancelled) return
-        if (detail.ai?.recommendedGroup !== null && detail.ai?.recommendedGroup !== undefined && detail.ai.recommendedGroup !== '') {
-          setRecommended({ group: detail.ai.recommendedGroup, reason: detail.ai.recommendedReason ?? null })
+        const saved = detail.ai?.recommendedGroup
+        if (saved !== null && saved !== undefined && saved !== '') {
+          setRecommended({
+            group: saved,
+            reason: detail.ai?.recommendedReason ?? null,
+            confidence: detail.ai?.recommendedConfidence ?? null,
+            alternatives: detail.ai?.recommendedAlternatives ?? [],
+          })
+          return
         }
+        // рекомендации ещё нет — просим агента подобрать команду (это до минуты)
+        setAiBusy(true)
+        const rec = await api.requestTeamRecommendation(id)
+        if (cancelled) return
+        setRecommended({ group: rec.recommendedGroup, reason: rec.reason, confidence: rec.confidence, alternatives: rec.alternatives })
       } catch (err) {
+        if (cancelled) return
         console.error('Не удалось получить рекомендацию BigDad', err)
+        setAiError(err instanceof api.ApiError && err.message !== '' ? err.message : 'BigDad сейчас не смог подобрать команду')
+      } finally {
+        if (!cancelled) setAiBusy(false)
       }
     })()
     return () => {
@@ -495,11 +523,36 @@ export function AssignModal() {
       }
     >
       <p style={{ fontWeight: 800, fontSize: 16, marginBottom: 12 }}>1. Команда</p>
-      {recommended !== null && (
-        <p className="assignnote" title={recommended.reason ?? undefined}>
+      {aiBusy && (
+        <p className="assignnote assignnote--busy">
           <SparkIcon size={14} />
-          Рекомендует BigDad: {recommended.group}
-          {recommended.reason !== null ? ` — ${recommended.reason}` : ''}
+          BigDad подбирает команду — анализирует нагрузку, опыт и похожие инциденты, это до минуты
+        </p>
+      )}
+      {recommended !== null && (
+        <div className="assignnote">
+          <p>
+            <SparkIcon size={14} />
+            Рекомендует BigDad: <b>{recommended.group}</b>
+            {recommended.confidence !== null ? ` · уверенность ${recommended.confidence}%` : ''}
+            {recommended.reason !== null ? ` — ${recommended.reason}` : ''}
+          </p>
+          {recommended.alternatives.length > 0 && (
+            <div className="assignnote__alts">
+              <span>Запасные:</span>
+              {recommended.alternatives.map(alt => (
+                <button key={alt.group} type="button" className="assignnote__alt" title={alt.reason} onClick={() => setTeam(alt.group)}>
+                  {alt.group}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {aiError !== null && (
+        <p className="assignnote assignnote--error">
+          <SparkIcon size={14} />
+          {aiError}. Команду можно выбрать без рекомендации
         </p>
       )}
       <div className="teamcards">

@@ -1726,13 +1726,70 @@ a {
 /* назначение команды */
 
 .assignnote {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  background: var(--violet-bg);
+  border-radius: 10px;
+  padding: 10px 12px;
   color: var(--violet);
   font-size: 13px;
   font-weight: 600;
   margin-bottom: 10px;
+}
+
+.assignnote p {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 0;
+}
+
+.assignnote--busy,
+.assignnote--error {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.assignnote--error {
+  color: var(--red);
+  background: var(--red-tint-bg);
+}
+
+.assignnote__alts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  color: var(--text-2);
+  font-weight: 600;
+}
+
+.assignnote__alt {
+  border: 1px solid var(--violet);
+  border-radius: 999px;
+  padding: 2px 10px;
+  background: none;
+  cursor: pointer;
+  color: var(--violet);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ИИ-описания команд в статистике */
+
+.teamrow-ai td {
+  background: var(--violet-bg);
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 10px 14px 12px;
+}
+
+.teamrow-ai__spark {
+  color: var(--violet-icon);
+  vertical-align: -2px;
+  margin-right: 6px;
 }
 
 .teamcards {
