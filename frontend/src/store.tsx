@@ -691,19 +691,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const doAssign = useCallback(
     async (card: Card, team: string, executorUserId: string | null) => {
       try {
-        const detail = await api.patchIncident(card.id, { assignedGroupName: team })
-        dispatch({ type: 'UPSERT_CARDS', cards: [detail] })
+        let executor: User | undefined
         if (executorUserId !== null) {
           try {
-            const users = await api.fetchUsers()
-            const dev = users.find(u => u.id === executorUserId)
-            if (dev !== undefined) {
-              await api.addMember(card.id, executorUserId)
-              showToast(`${team} · ${dev.fullName ?? dev.email} — назначено уведомление`, 'success')
-            }
+            executor = (await api.fetchUsers()).find(u => u.id === executorUserId)
           } catch (err) {
-            console.error('Не удалось добавить участника', err)
+            console.error('Не удалось загрузить разработчиков', err)
           }
+        }
+        const patch: { assignedGroupName: string; assignedEmployee?: string; assignedEmployeeLogin?: string } = {
+          assignedGroupName: team,
+        }
+        if (executor !== undefined) {
+          const login = executor.itsmLogin ?? ''
+          // в данных ITSM исполнитель записан как «ФИО (логин)»; логин связывает карточку с учёткой разработчика
+          patch.assignedEmployee = login === '' ? (executor.fullName ?? executor.email) : `${executor.fullName ?? executor.email} (${login})`
+          if (login !== '') patch.assignedEmployeeLogin = login
+        }
+        const detail = await api.patchIncident(card.id, patch)
+        dispatch({ type: 'UPSERT_CARDS', cards: [detail] })
+        if (executor !== undefined) {
+          if ((executor.itsmLogin ?? '') === '') {
+            // без логина ITSM разработчику доступ и уведомление даёт только участие в инциденте
+            try {
+              await api.addMember(card.id, executor.id)
+            } catch (err) {
+              console.error('Не удалось добавить участника', err)
+            }
+          }
+          showToast(`${team} · ${executor.fullName ?? executor.email} — назначено уведомление`, 'success')
         }
         showToast(`Инцидент ${card.id} назначен команде ${team}`, 'success')
         scheduleDashboardRefresh()

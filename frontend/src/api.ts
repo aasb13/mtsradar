@@ -252,6 +252,7 @@ export function patchIncident(
     assignedGroupName?: string
     productName?: string
     assignedEmployee?: string
+    assignedEmployeeLogin?: string
     header?: string
     expectedVersion?: number
   },
