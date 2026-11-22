@@ -18,6 +18,7 @@ from app.domain.enums import (
     STATES,
     TRANSITIONS,
     Group,
+    Role,
 )
 from app.services import access, incident_actions, presenter
 from app.services.incident_query import build_filters
@@ -239,8 +240,12 @@ class TransitionIn(BaseModel):
 
 
 @router.post("/incidents/{incident_id}/transition")
-async def transition(incident_id: str, body: TransitionIn, user: CoordinatorUser) -> dict[str, Any]:
+async def transition(incident_id: str, body: TransitionIn, user: CurrentUser) -> dict[str, Any]:
     doc = await _doc_or_404(incident_id)
+    if user["role"] not in (Role.ADMIN, Role.COORDINATOR):
+        # разработчик отмечает исправленным (7) только свой инцидент — он исполнитель в ITSM или участник
+        if not (access.is_developer(user) and body.toStateId == RESOLVED and access.can_view(user, doc)):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Недостаточно прав")
     try:
         result = await incident_actions.apply_transition(
             doc, body.toStateId, state_reason=body.stateReason, solution=body.solution, user=user

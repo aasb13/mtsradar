@@ -3,7 +3,9 @@
 Матрица прав can() зеркалит зависимости REST-маршрутов (по построению — маршруты и агент
 исполняют один слой app/services/incident_actions.py):
   читать инциденты              — все роли; разработчику только свои (access.mongo_filter/can_view);
-  правки/переходы/ack/архив     — admin+coordinator (как CoordinatorUser на REST-мутациях);
+  правки/ack/архив              — admin+coordinator (как CoordinatorUser на REST-мутациях);
+  переходы                      — admin+coordinator; в REST разработчик может ещё отметить исправленным (7)
+                                  свой инцидент (access.can_view) — агенту это действие не выдаётся;
   комментарии                   — admin+coordinator+viewer (как StaffUser на POST /comments).
 
 Отказ по правам — это {"error": ...} в ответ модели, действие не выполняется: агент не
@@ -647,7 +649,8 @@ def chat_tools(ctx: ToolContext) -> list[Tool]:
     """
     assert ctx.user is not None
     if access.is_developer(ctx.user):
-        # у разработчика в REST нет мутаций — агенту только чтение его инцидентов
+        # в REST у разработчика единственная мутация — «исправлен» на своём инциденте;
+        # агенту выдаётся только чтение его инцидентов
         return [_search_incidents_tool(ctx), _get_incident_tool(ctx), _dashboard_summary_tool(ctx)]
     tools: list[Tool] = [
         _search_incidents_tool(ctx),
