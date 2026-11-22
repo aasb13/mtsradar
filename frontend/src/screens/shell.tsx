@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { initials, pluralize, relativeTime } from '../format'
 import { navigate, useRoute } from '../router'
 import { useApp } from '../store'
-import { BellIcon, CloseIcon, LogoutIcon, MoonIcon, SearchIcon, StatsIcon, SunIcon, UserIcon } from '../ui'
+import { BellIcon, CloseIcon, LogoutIcon, MoonIcon, SearchIcon, Spinner, StatsIcon, SunIcon, UserIcon } from '../ui'
 import * as api from '../api'
 import type { Notification, Role, ToastItem } from '../types'
 
@@ -49,26 +49,25 @@ function Logo() {
   )
 }
 
-function SearchBox() {
+function SearchBox({ compact, open, onOpenChange }: { compact: boolean; open: boolean; onOpenChange: (open: boolean) => void }) {
   const { state, dispatch } = useApp()
-  const [open, setOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.code === 'KeyK') {
         e.preventDefault()
-        setOpen(true)
+        onOpenChange(true)
         window.setTimeout(() => inputRef.current?.focus(), 0)
       }
       if (e.key === 'Escape' && open) {
-        setOpen(false)
+        onOpenChange(false)
         dispatch({ type: 'SET_SEARCH', search: '' })
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, dispatch])
+  }, [open, dispatch, onOpenChange])
 
   if (open) {
     return (
@@ -79,7 +78,7 @@ function SearchBox() {
         placeholder="Поиск по номеру, названию, продукту…"
         onChange={e => dispatch({ type: 'SET_SEARCH', search: e.target.value })}
         onBlur={() => {
-          if (state.search === '') setOpen(false)
+          if (state.search === '') onOpenChange(false)
         }}
       />
     )
@@ -87,14 +86,15 @@ function SearchBox() {
   return (
     <button
       type="button"
-      className="headerbtn"
+      className="headerbtn searchbtn"
+      aria-label="Поиск"
       onClick={() => {
-        setOpen(true)
+        onOpenChange(true)
         window.setTimeout(() => inputRef.current?.focus(), 0)
       }}
     >
       <SearchIcon size={16} />
-      <span className="headerbtn__label">Поиск</span>
+      {!compact && <span className="headerbtn__label">Поиск</span>}
     </button>
   )
 }
@@ -162,7 +162,10 @@ function BellMenu({ onClose }: { onClose: () => void }) {
         </button>
       </div>
       {loading ? (
-        <div className="bell-menu__empty loading-text">Загрузка…</div>
+        <div className="bell-menu__empty bell-menu__loading">
+          <Spinner size={20} />
+          <span>Загрузка…</span>
+        </div>
       ) : items.length === 0 ? (
         <div className="bell-menu__empty">Уведомлений нет — всё спокойно</div>
       ) : (

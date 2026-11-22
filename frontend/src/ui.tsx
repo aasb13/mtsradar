@@ -135,6 +135,23 @@ export function stringOptions(values: string[]): SelectOption[] {
   return values.map(v => ({ value: v, label: v }))
 }
 
+// порог числа пунктов, с которого в выпадашке появляется поиск
+export const SEARCH_MIN_OPTIONS = 15
+
+// нечёткое совпадение: все символы запроса встречаются в тексте по порядку
+export function fuzzyMatch(query: string, text: string): boolean {
+  const q = query.trim().toLowerCase()
+  if (q === '') return true
+  const t = text.toLowerCase()
+  let i = 0
+  for (const ch of q) {
+    i = t.indexOf(ch, i)
+    if (i === -1) return false
+    i++
+  }
+  return true
+}
+
 export function Select<V extends string>({
   value,
   options,
@@ -150,10 +167,14 @@ export function Select<V extends string>({
 }) {
   const [open, setOpen] = useState(false)
   const [hl, setHl] = useState(0)
+  const [query, setQuery] = useState('')
   const id = useId()
   const ref = useRef<HTMLSpanElement>(null)
   const hlRef = useRef<HTMLButtonElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
   const selectedIdx = options.findIndex(o => o.value === value)
+  const searchable = options.length >= SEARCH_MIN_OPTIONS
+  const visible = searchable ? options.filter(o => fuzzyMatch(query, o.label)) : options
 
   useEffect(() => {
     if (!open) return
@@ -181,17 +202,45 @@ export function Select<V extends string>({
     if (open) hlRef.current?.scrollIntoView({ block: 'nearest' })
   }, [open, hl])
 
+  useEffect(() => {
+    if (open && searchable) searchRef.current?.focus()
+  }, [open, searchable])
+
   const pick = (v: V) => {
     setOpen(false)
     onChange(v)
+  }
+
+  const openMenu = () => {
+    setQuery('')
+    setHl(Math.max(0, selectedIdx))
+    setOpen(true)
+  }
+
+  const onSearchKey = (e: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      if (visible.length === 0) return
+      const delta = e.key === 'ArrowDown' ? 1 : -1
+      setHl(h => (h + delta + visible.length) % visible.length)
+    } else if (e.key === 'Home') {
+      e.preventDefault()
+      setHl(0)
+    } else if (e.key === 'End') {
+      e.preventDefault()
+      setHl(Math.max(0, visible.length - 1))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      const o = visible[hl]
+      if (o !== undefined) pick(o.value)
+    }
   }
 
   const onTriggerKey = (e: ReactKeyboardEvent<HTMLButtonElement>) => {
     if (!open) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault()
-        setHl(Math.max(0, selectedIdx))
-        setOpen(true)
+        openMenu()
       }
       return
     }
@@ -222,8 +271,8 @@ export function Select<V extends string>({
         aria-expanded={open}
         aria-activedescendant={open ? `${id}-opt${hl}` : undefined}
         onClick={() => {
-          if (!open) setHl(Math.max(0, selectedIdx))
-          setOpen(!open)
+          if (!open) openMenu()
+          else setOpen(false)
         }}
         onKeyDown={onTriggerKey}
       >
@@ -233,22 +282,39 @@ export function Select<V extends string>({
         </span>
       </button>
       {open && (
-        <span className="select-menu" role="listbox">
-          {options.map((o, i) => (
-            <button
-              key={o.value}
-              ref={i === hl ? hlRef : undefined}
-              type="button"
-              role="option"
-              id={`${id}-opt${i}`}
-              aria-selected={o.value === value}
-              className={`select__opt${i === hl ? ' select__opt--hl' : ''}${o.value === value ? ' select__opt--sel' : ''}`}
-              onMouseEnter={() => setHl(i)}
-              onClick={() => pick(o.value)}
-            >
-              {o.label}
-            </button>
-          ))}
+        <span className={`select-menu${searchable ? ' select-menu--search' : ''}`}>
+          {searchable && (
+            <input
+              ref={searchRef}
+              className="select-menu__search"
+              type="text"
+              placeholder="Поиск…"
+              value={query}
+              onChange={e => {
+                setQuery(e.target.value)
+                setHl(0)
+              }}
+              onKeyDown={onSearchKey}
+            />
+          )}
+          <span className="select-menu__list" role="listbox">
+            {visible.map((o, i) => (
+              <button
+                key={o.value}
+                ref={i === hl ? hlRef : undefined}
+                type="button"
+                role="option"
+                id={`${id}-opt${i}`}
+                aria-selected={o.value === value}
+                className={`select__opt${i === hl ? ' select__opt--hl' : ''}${o.value === value ? ' select__opt--sel' : ''}`}
+                onMouseEnter={() => setHl(i)}
+                onClick={() => pick(o.value)}
+              >
+                {o.label}
+              </button>
+            ))}
+          </span>
+          {visible.length === 0 && <span className="select-menu__empty">Ничего не найдено</span>}
         </span>
       )}
     </span>
@@ -383,6 +449,25 @@ function svg(size: number | undefined, children: ReactNode) {
   return (
     <svg width={size ?? 16} height={size ?? 16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       {children}
+    </svg>
+  )
+}
+
+export function Spinner({ size = 18 }: IconProps) {
+  return (
+    <svg
+      className="spinner"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" strokeOpacity="0.25" />
+      <path d="M12 3a9 9 0 0 1 9 9" />
     </svg>
   )
 }

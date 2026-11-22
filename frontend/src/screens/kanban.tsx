@@ -1,11 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { compareCards, liveSla, priorityMeta, stateLabel, todayWeekday } from '../format'
 import { navigate } from '../router'
 import { filterCards, useApp } from '../store'
 import { SyncBadge, SyncSub } from './shell'
 import type { Card } from '../types'
 import { BOARD_COLUMNS, TRANSITIONS } from '../types'
-import { ChevronDownIcon, DotsIcon, EyeIcon, SeverityBadge, SlaChip, SnowflakeIcon, TeamIcon } from '../ui'
+import { ChevronDownIcon, DotsIcon, EyeIcon, SEARCH_MIN_OPTIONS, SeverityBadge, SlaChip, SnowflakeIcon, TeamIcon, fuzzyMatch } from '../ui'
 
 const PRIORITY_TONE_BG: Record<number, string> = {
   4: 'var(--red)',
@@ -35,10 +35,21 @@ export function FilterChipMenu({
   onSelect: (key: string | number | null) => void
 }) {
   const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
+  const searchable = options.length >= SEARCH_MIN_OPTIONS
+  const visible = searchable ? options.filter(o => fuzzyMatch(query, o.label)) : options
+
+  useEffect(() => {
+    if (open && searchable) searchRef.current?.focus()
+  }, [open, searchable])
   return (
     <span
       className={`fchip ${active ? 'fchip--active' : ''}`}
-      onClick={() => setOpen(!open)}
+      onClick={() => {
+        if (!open) setQuery('')
+        setOpen(!open)
+      }}
     >
       <span className="fchip__label">{label}</span>
       <span className="fchip__value">{value}</span>
@@ -46,8 +57,18 @@ export function FilterChipMenu({
         <ChevronDownIcon size={14} />
       </span>
       {open && (
-        <span className="fchip-menu" onClick={e => e.stopPropagation()}>
-          {options.map(o => (
+        <span className={`fchip-menu${searchable ? ' fchip-menu--search' : ''}`} onClick={e => e.stopPropagation()}>
+          {searchable && (
+            <input
+              ref={searchRef}
+              className="fchip-menu__search"
+              type="text"
+              placeholder="Поиск…"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+            />
+          )}
+          {visible.map(o => (
             <button
               key={String(o.key)}
               type="button"
@@ -60,6 +81,7 @@ export function FilterChipMenu({
               {o.label}
             </button>
           ))}
+          {visible.length === 0 && <span className="fchip-menu__empty">Ничего не найдено</span>}
         </span>
       )}
     </span>
