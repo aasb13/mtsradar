@@ -19,13 +19,17 @@ from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import ValidationError
+from pymongo.errors import DuplicateKeyError
 
 from app.bus import rabbit
 from app.core.config import get_settings
+from app.core.security import hash_password
 from app.db.mongo import get_db
 from app.db.redis import get_redis
+from app.domain.enums import Role
 from app.domain.normalize import ItsmIncident, reconcile_codes, sanitize, to_storage
 from app.services.store import ConflictError, archive_incident, get_doc, save_incident
+from app.services.users import default_notification_settings
 
 log = logging.getLogger(__name__)
 
@@ -91,6 +95,8 @@ async def import_records(
         "restored": 0,
         "unchanged": 0,
         "archived": 0,
+        "employeesCreated": 0,
+        "employeesUpdated": 0,
         "errors": [],
         "warnings": [],
         "changedIds": [],
@@ -135,6 +141,9 @@ async def import_records(
             if res.status != "unchanged":
                 report["changedIds"].append(inc_id)
 
+        if not dry_run:
+            await sync_employees(parsed, report)
+
         if mode == "snapshot" and s.import_missing_policy == "archive":
             if not parsed:
                 report["warnings"].append(
@@ -167,7 +176,79 @@ def _summary(report: dict[str, Any]) -> dict[str, Any]:
         **{k: report.get(k) for k in keys},
         "errors": len(report["errors"]),
         "warnings": len(report["warnings"]),
+        "employeesCreated": report.get("employeesCreated", 0),
+        "employeesUpdated": report.get("employeesUpdated", 0),
     }
+
+
+def _employee_from_data(parsed: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Исполнители, упомянутые в выгрузке: логин -> имя и самая частая команда."""
+    stats: dict[str, dict[str, Any]] = {}
+    for data in parsed.values():
+        login = data.get("assignedEmployeeLogin")
+        if not login:
+            continue
+        info = stats.setdefault(login, {"name": None, "teams": {}})
+        name = data.get("assignedEmployee")
+        if name:
+            # в выгрузке исполнитель записан как «ФИО (логин)»
+            info["name"] = name[: -(len(login) + 3)].strip() if name.endswith(f" ({login})") else name
+        team = data.get("assignedGroupName")
+        if team:
+            info["teams"][team] = info["teams"].get(team, 0) + 1
+    return stats
+
+
+async def sync_employees(parsed: dict[str, dict[str, Any]], report: dict[str, Any]) -> None:
+    """Каждый исполнитель из выгрузки числится сотрудником: аккаунт создаётся и
+    обновляется из данных при импорте, а не руками через сид.
+
+    Имя и команда берутся из данных; роль, пароль и блокировка — наши, импорт их
+    не трогает и заблокированных вручную не воскрешает.
+    """
+    stats = _employee_from_data(parsed)
+    if not stats:
+        return
+    users = get_db().users
+    for login, info in stats.items():
+        team = max(info["teams"], key=lambda t: (info["teams"][t], t)) if info["teams"] else None
+        name = info["name"] or login
+        upd: dict[str, Any] = {"fullName": name}
+        if team:
+            upd["team"] = team
+        existing = await users.find_one({"itsmLogin": login})
+        if existing is not None and existing.get("deletedAt") is not None:
+            continue
+        if existing is None:
+            # аккаунт могли завести вручную с почтой вида логин@mts.ru — привязываем его к выгрузке
+            existing = await users.find_one({"email": f"{login}@mts.ru"})
+            if existing is not None and existing.get("deletedAt") is not None:
+                continue
+            upd["itsmLogin"] = login
+        if existing is not None:
+            await users.update_one({"_id": existing["_id"]}, {"$set": upd})
+            report["employeesUpdated"] += 1
+            continue
+        try:
+            await users.insert_one(
+                {
+                    "_id": uuid.uuid4().hex,
+                    "email": f"{login}@mts.ru",
+                    "fullName": name,
+                    "role": Role.DEVELOPER,
+                    "itsmLogin": login,
+                    "team": team,
+                    # пароль не выдаётся: вход появится, когда администратор задаст его сам
+                    "passwordHash": hash_password(uuid.uuid4().hex),
+                    "telegramChatId": None,
+                    "notificationSettings": default_notification_settings(),
+                    "createdAt": datetime.now(UTC),
+                    "deletedAt": None,
+                }
+            )
+            report["employeesCreated"] += 1
+        except DuplicateKeyError:
+            log.warning("employee insert raced, skipped", extra={"extra_data": {"login": login}})
 
 
 async def import_file(path: Path, *, force: bool = False, mode: Mode = "snapshot") -> dict[str, Any] | None:
