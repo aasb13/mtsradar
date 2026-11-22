@@ -36,6 +36,14 @@ def card(doc: dict[str, Any], now: datetime, s: Settings | None = None) -> dict[
         and now - critical_since <= timedelta(minutes=s.critical_new_minutes)
     )
     ai = doc.get("ai") or None
+    freeze = meta.get("freeze") or None
+    # у замороженного активного инцидента SLA фиксируется на момент начала паузы:
+    # таймер, сортировки и kpi «стоят», пока идёт заморозка
+    sla = (
+        sla_info(data, freeze["startedAt"], s)
+        if freeze is not None and freeze.get("startedAt") is not None and f.is_active
+        else sla_info(data, now, s)
+    )
     return {
         "id": doc["_id"],
         "header": data.get("header"),
@@ -60,7 +68,8 @@ def card(doc: dict[str, Any], now: datetime, s: Settings | None = None) -> dict[
         "isActive": f.is_active,
         "isResolved": f.is_resolved,
         "isNewCritical": is_new_critical,
-        "sla": sla_info(data, now, s),
+        "sla": sla,
+        "freeze": freeze,
         "acknowledged": ack,
         "ai": {
             "summary": ai.get("summary"),

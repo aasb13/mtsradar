@@ -1,9 +1,10 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import * as api from '../api'
-import { formatShort, formatTimeLeft, liveSla, relativeTime, shortName, slaBigValue } from '../format'
+import { formatShort, liveSla, relativeTime, shortName, slaBigValue } from '../format'
 import { navigate } from '../router'
 import { useApp } from '../store'
+import type { FreezeRequest } from '../store'
 import type { AiAlternative, Card, Comment, HistoryEvent, IncidentDetail } from '../types'
 import { ArrowRightIcon, Avatar, Button, CloseIcon, CommentIcon, LinkIcon, Modal, RefreshIcon, SeverityBadge, SlaChip, SnowflakeIcon, SparkIcon, StatusPill, Textarea, TeamIcon } from '../ui'
 
@@ -48,6 +49,11 @@ function changesText(event: HistoryEvent): ReactNode {
   if (event.type === 'created') return HISTORY_TEXT.created
   if (event.type === 'acknowledged') return HISTORY_TEXT.acknowledged
   if (event.type === 'imported') return HISTORY_TEXT.imported
+  if (event.type === 'frozen') {
+    const reason = typeof event.reason === 'string' && event.reason !== '' ? event.reason : null
+    return reason === null ? 'SLA заморожен' : `SLA заморожен: ${reason}`
+  }
+  if (event.type === 'unfrozen') return 'SLA разморожен — срок сдвинут'
   if (parts.length === 0) return HISTORY_TEXT[event.type] ?? 'Событие'
   return parts.map((part, i) => <Fragment key={i}>{i > 0 ? ' · ' : null}{part}</Fragment>)
 }
@@ -68,7 +74,7 @@ function descriptionOf(detail: IncidentDetail | null, meta: Record<string, unkno
 }
 
 export function IncidentPanel() {
-  const { state, dispatch, showToast, doAssign } = useApp()
+  const { state, dispatch, showToast, doAssign, doUnfreeze } = useApp()
   const id = state.panelId
   const [detail, setDetail] = useState<IncidentDetail | null>(null)
   const [history, setHistory] = useState<HistoryEvent[]>([])
@@ -111,7 +117,7 @@ export function IncidentPanel() {
   }, [id, showToast])
 
   if (id === null || card === null) return null
-  const frozen = state.freeze[card.id] !== undefined
+  const frozen = card.freeze != null
   const sla = liveSla(card, state.now)
   const ai = detail?.ai ?? null
   const aiEnabled = state.dictionaries?.aiEnabled !== false
@@ -182,7 +188,7 @@ export function IncidentPanel() {
           <div>
             <p className="slabox__label">{sla.state === 'breach' ? 'Просрочен' : frozen ? 'Пауза SLA' : sla.state === 'resolved' ? 'Решён' : 'До дедлайна'}</p>
             <p className={`slabox__time ${sla.state === 'breach' ? 'slabox__time--red' : ''}`}>
-              {frozen ? formatTimeLeft(state.freeze[card.id].remainingSeconds) : slaBigValue(card, state.now)}
+              {slaBigValue(card, state.now)}
             </p>
           </div>
           <div className="slabox__right">
@@ -201,12 +207,8 @@ export function IncidentPanel() {
               variant="secondary"
               className="btn--sm"
               onClick={() => {
-                if (frozen) {
-                  dispatch({ type: 'UNFREEZE', id: card.id })
-                  showToast(`${card.id} разморожен`, 'success')
-                } else {
-                  dispatch({ type: 'OPEN_FREEZE', id: card.id })
-                }
+                if (frozen) void doUnfreeze(card.id)
+                else dispatch({ type: 'OPEN_FREEZE', id: card.id })
               }}
             >
               <SnowflakeIcon size={15} />
@@ -700,25 +702,29 @@ export function AssignModal() {
 }
 
 export function FreezeModal() {
-  const { state, dispatch, doFreeze, showToast } = useApp()
+  const { state, dispatch, doFreeze } = useApp()
   const id = state.freezeId
   const card = id !== null ? state.cards.get(id) ?? null : null
   const [reason, setReason] = useState('Ждём ответа подрядчика')
   const [autoAt, setAutoAt] = useState('')
   const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
   if (id === null || card === null) return null
-  const sla = liveSla(card, state.now)
 
   const submit = () => {
-    const remaining = sla.state === 'breach' ? (card.sla.overdueSeconds ?? 0) : card.sla.timeLeftSeconds ?? 0
-    doFreeze(card.id, {
-      remainingSeconds: remaining,
-      frozenAt: Date.now(),
-      reason: text.trim() === '' ? reason : `${reason} — ${text.trim()}`,
-      autoAt: autoAt === '' ? null : Date.parse(autoAt) || null,
-    })
-    dispatch({ type: 'OPEN_FREEZE', id: null })
-    showToast(`${card.id} заморожен — SLA-таймер на паузе`, 'info')
+    if (busy) return
+    setBusy(true)
+    const body: FreezeRequest = { reason }
+    if (text.trim() !== '') body.comment = text.trim()
+    if (autoAt !== '') {
+      const at = new Date(autoAt)
+      if (!Number.isNaN(at.getTime())) body.autoUnfreezeAt = at.toISOString()
+    }
+    void (async () => {
+      const ok = await doFreeze(card.id, body)
+      setBusy(false)
+      if (ok) dispatch({ type: 'OPEN_FREEZE', id: null })
+    })()
   }
 
   return (
@@ -733,7 +739,7 @@ export function FreezeModal() {
           <Button variant="secondary" onClick={() => dispatch({ type: 'OPEN_FREEZE', id: null })}>
             Отмена
           </Button>
-          <Button variant="freeze" onClick={submit}>
+          <Button variant="freeze" disabled={busy} onClick={submit}>
             <SnowflakeIcon size={15} />
             Заморозить
           </Button>

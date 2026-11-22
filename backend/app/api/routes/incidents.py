@@ -262,6 +262,40 @@ async def acknowledge(incident_id: str, user: CoordinatorUser) -> dict[str, Any]
     return await incident_actions.acknowledge(doc, user)
 
 
+class FreezeIn(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
+    comment: str | None = Field(None, max_length=5000)
+    autoUnfreezeAt: datetime | None = None
+
+
+@router.post("/incidents/{incident_id}/freeze")
+async def freeze_incident(incident_id: str, body: FreezeIn, user: CoordinatorUser) -> dict[str, Any]:
+    """Пауза SLA: таймер замирает, алерты не уходят, до разморозки вручную или по расписанию."""
+    doc = await _doc_or_404(incident_id, include_deleted=True)
+    try:
+        await incident_actions.freeze(
+            doc, reason=body.reason, comment=body.comment, auto_unfreeze_at=body.autoUnfreezeAt, user=user
+        )
+    except incident_actions.ConflictError as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
+    except incident_actions.ClosedError as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
+    except incident_actions.NoDeadlineError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e)) from e
+    return presenter.detail(doc, _now())
+
+
+@router.post("/incidents/{incident_id}/unfreeze")
+async def unfreeze_incident(incident_id: str, user: CoordinatorUser) -> dict[str, Any]:
+    """Снятие паузы: срок сдвигается вперёд на длительность заморозки."""
+    doc = await _doc_or_404(incident_id, include_deleted=True)
+    try:
+        await incident_actions.unfreeze(doc, user=user)
+    except incident_actions.ConflictError as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
+    return presenter.detail(doc, _now())
+
+
 @router.delete("/incidents/{incident_id}", status_code=204)
 async def delete_incident(incident_id: str, user: CoordinatorUser) -> None:
     doc = await _doc_or_404(incident_id)

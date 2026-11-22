@@ -2,7 +2,8 @@
 
   * следит за файлом с данными и импортирует изменения;
   * слушает RabbitMQ и создаёт уведомления;
-  * контролирует сроки (SLA).
+  * контролирует сроки (SLA);
+  * автоматически размораживает замороженные SLA (по meta.freeze.endsAt).
 
 Запускается ОДИН экземпляр (вотчер файла не должен работать дважды; импорт и так под
 Redis-блокировкой и идемпотентен, так что второй экземпляр не сломает данные).
@@ -18,7 +19,7 @@ from app.core.config import get_settings
 from app.core.logging import setup_logging
 from app.db.mongo import close_client, ensure_indexes
 from app.db.redis import close_redis, seen_before
-from app.services import sla_monitor
+from app.services import incident_actions, sla_monitor
 from app.services.importer import import_file
 from app.services.notify import deliver, rules_for
 from app.services.watcher import watch_data_file
@@ -36,6 +37,20 @@ async def on_incident_event(routing_key: str, envelope: dict[str, Any]) -> None:
     for n in rules_for(envelope["type"], payload):
         count = await deliver(n, payload.get("card"))
         log.info("notification", extra={"extra_data": {"kind": n["kind"], "incident": n["incidentId"], "users": count}})
+
+
+async def auto_unfreeze_loop(stop: asyncio.Event) -> None:
+    """Раз в sla_check_interval_sec снимает заморозки, у которых наступил endsAt."""
+    interval = get_settings().sla_check_interval_sec
+    while not stop.is_set():
+        try:
+            await incident_actions.unfreeze_due()
+        except Exception:
+            log.exception("auto unfreeze failed")
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=interval)
+        except TimeoutError:
+            pass
 
 
 async def main() -> None:
@@ -59,7 +74,10 @@ async def main() -> None:
         for extra in sorted(primary.parent.glob("*.json")):
             if extra != primary:
                 await import_file(extra, force=True, mode="upsert")
-    tasks = [asyncio.create_task(sla_monitor.run(stop), name="sla")]
+    tasks = [
+        asyncio.create_task(sla_monitor.run(stop), name="sla"),
+        asyncio.create_task(auto_unfreeze_loop(stop), name="unfreeze"),
+    ]
     if s.watch_data_file:
         tasks.append(asyncio.create_task(watch_data_file(stop), name="watcher"))
 

@@ -31,6 +31,7 @@ async def check_once(*, prime: bool = False) -> int:
         "meta.isActive": True,
         "data.deadline": {"$ne": None},
         "meta.groups": {"$in": [g.value for g in WATCHED_GROUPS]},
+        "meta.freeze.startedAt": {"$exists": False},  # замороженные на паузе — алертов по ним нет
     }
     sent = 0
     async for doc in get_db().incidents.find(query):

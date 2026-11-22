@@ -89,6 +89,9 @@ def _build_meta(
         "updatedAt": now,
         "resolvedAt": resolved_at,
         "criticalSince": critical_since,
+        # заморозка ставится поверх данных (update_one, без версии) и должна переживать
+        # любую перезапись документа — импорт из файла, правку карточки, восстановление
+        "freeze": prev_meta.get("freeze"),
         "source": source,
         "version": prev_meta.get("version", 0) + 1,
         "deletedAt": None,

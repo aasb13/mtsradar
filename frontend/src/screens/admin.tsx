@@ -193,7 +193,7 @@ export function AdminIncidentsPage() {
                   </td>
                   <td>{card.assignedGroupName ?? '—'}</td>
                   <td>
-                    <SlaChip card={card} now={state.now} frozen={state.freeze[card.id] !== undefined} />
+                    <SlaChip card={card} now={state.now} frozen={card.freeze != null} />
                   </td>
                   <td className="table__muted">{formatShort(card.submitDate)}</td>
                 </tr>
@@ -429,11 +429,11 @@ export function AdminProductsPage() {
         if (card.isCritical && entry.critical === null) entry.critical = card
         if (card.sla.state === 'breached') entry.overdue = true
       }
-      if (state.freeze[card.id] !== undefined) entry.frozen = true
+      if (card.freeze != null) entry.frozen = true
       map.set(card.productName, entry)
     }
     return map
-  }, [state.cards, state.freeze])
+  }, [state.cards])
 
   return (
     <>

@@ -70,6 +70,9 @@
 Как читать поля:
 - **что / где / кто / сколько осталось** (обязательно по кейсу): `productName` + `header`; `submitDate`; `assignedGroupName` + `assignedEmployee`; `state`; `deadline`.
 - `sla.state`: `ok` · `warning` (<30% времени) · `danger` (<10%) · `breached` (просрочен) · `none` (нет срока) · `resolved`.
+- `freeze` — серверная заморозка SLA: `null` либо `{startedAt, endsAt, reason, actor}`. Пока заморожен,
+  `sla` в карточке зафиксирован на момент `startedAt` (таймер «стоит»); при разморозке дедлайн
+  сдвигается вперёд на длительность паузы, и `sla` снова тикает от нового срока.
 - **Живой таймер** считайте на клиенте от `deadline`. Чтобы не зависеть от часов ноутбука, при загрузке запомните `offset = serverTime − Date.now()` и используйте `Date.now() + offset`.
 - `isResolved && groups.includes("critical")` — критический, который **решён недавно**: показывать зелёным «решён» (бэкенд держит его в группе 60 мин).
 - `isNewCritical` — появился недавно и ещё никем не подтверждён → пульсация/звук.
@@ -89,6 +92,8 @@
 | `incident.created` / `incident.updated` | `{incidentId, kinds[], changes[], groupsEntered[], groupsLeft[], card, source, actor, silent}` | заменить карточку по `id` во всех группах по `card.groups` (убрать из групп, которых там нет) |
 | `incident.removed` | `{incidentId}` | убрать карточку отовсюду |
 | `incident.acknowledged` | `{incidentId, actor, card}` | обновить карточку, погасить баннер |
+| `incident.frozen` | `{incidentId, auto: false, actor, card}` | обновить карточку: таймер на паузе, тост «заморожен — SLA-таймер на паузе» |
+| `incident.unfrozen` | `{incidentId, auto, actor, card}` | обновить карточку: срок сдвинут; `auto: true` — тост «разморожен по расписанию» |
 | `incident.ai_updated` | `{incidentId, ai, card}` | обновить ИИ-блок |
 | `incident.sla` | `{incidentId, slaState, timeLeftSeconds, card}` | подсветить срок |
 | `incident.comment_added` | `{incidentId, comment}` | дописать в ленту, если карточка открыта |
@@ -122,6 +127,8 @@
 | GET | `/incidents/{id}` | все | Card + `data` (полная запись из файла) + `meta` + `ai` (полный) + `allowedTransitions` |
 | PATCH | `/incidents/{id}` | coordinator | `{priorityId?, deadline?, assignedGroupName?, assignedEmployee?, header?, shortDescription?, description?, expectedVersion?}` |
 | POST | `/incidents/{id}/transition` | coordinator | `{toStateId, stateReason?, solution?, comment?}`; 422 при недопустимом переходе, 409 если Закрыт |
+| POST | `/incidents/{id}/freeze` | coordinator | `{reason (1..500), comment?, autoUnfreezeAt? (ISO)}` — пауза SLA; 409 если уже заморожен/Закрыт/в архиве, 422 «У инцидента нет срока» |
+| POST | `/incidents/{id}/unfreeze` | coordinator | снять паузу: дедлайн сдвигается на длительность заморозки; 409 если не заморожен |
 | POST | `/incidents/{id}/ack` | coordinator | подтвердить критический |
 | DELETE | `/incidents/{id}` | coordinator | в архив (логическое удаление) |
 | POST | `/incidents/{id}/restore` | coordinator | вернуть из архива |

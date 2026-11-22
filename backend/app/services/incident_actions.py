@@ -11,7 +11,7 @@ ConflictError) — маршруты переводят их в HTTP-коды, а
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.bus import rabbit
@@ -34,6 +34,10 @@ class ClosedError(ValueError):
 
 class InvalidTransitionError(ValueError):
     """Переход статуса не разрешён процессом."""
+
+
+class NoDeadlineError(ValueError):
+    """Замораживать нечего: у инцидента нет срока."""
 
 
 async def _save(doc: dict[str, Any], data: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]:
@@ -112,6 +116,137 @@ async def acknowledge(doc: dict[str, Any], user: dict[str, Any]) -> dict[str, An
         "incident.acknowledged", {"incidentId": incident_id, "actor": actor_of(user), "card": card}
     )
     return card
+
+
+async def freeze(
+    doc: dict[str, Any],
+    *,
+    reason: str,
+    comment: str | None = None,
+    auto_unfreeze_at: datetime | None = None,
+    user: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Пауза SLA: meta.freeze ставится в Mongo, sla_monitor перестаёт брать инцидент в работу,
+    карточка показывает SLA на момент начала паузы. Дедлайн при заморозке не трогается —
+    он сдвигается один раз при разморозке на длительность паузы."""
+    incident_id = doc["_id"]
+    if doc["meta"].get("deletedAt"):
+        raise ConflictError("Инцидент в архиве")
+    if doc["data"].get("stateId") in FINAL_STATE_IDS:
+        raise ClosedError("Инцидент закрыт — при повторе проблемы заводится новый")
+    if doc["data"].get("deadline") is None:
+        raise NoDeadlineError("У инцидента нет срока")
+    if (doc["meta"].get("freeze") or {}).get("startedAt") is not None:
+        raise ConflictError("Инцидент уже заморожен")
+    now = _now()
+    freeze_meta = {
+        "startedAt": now,
+        "endsAt": to_ms_utc(auto_unfreeze_at) if auto_unfreeze_at is not None else None,
+        "reason": reason,
+        "actor": actor_of(user),
+    }
+    # "$exists": False в фильтре — двойная заморозка невозможна и на уровне записи
+    res = await get_db().incidents.update_one(
+        {"_id": incident_id, "meta.freeze.startedAt": {"$exists": False}},
+        {"$set": {"meta.freeze": freeze_meta}},
+    )
+    if res.matched_count == 0:
+        raise ConflictError("Инцидент изменился, обновите карточку")
+    await get_db().incident_events.insert_one(
+        {
+            "incidentId": incident_id,
+            "at": now,
+            "type": "frozen",
+            "source": "api",
+            "actor": actor_of(user),
+            "kinds": ["frozen"],
+            "changes": [],
+            "groupsEntered": [],
+            "groupsLeft": [],
+            "reason": reason,
+        }
+    )
+    doc["meta"]["freeze"] = freeze_meta
+    card = presenter.card(doc, now)
+    await rabbit.publish(
+        "incident.frozen", {"incidentId": incident_id, "auto": False, "actor": actor_of(user), "card": card}
+    )
+    if comment:
+        await add_comment(incident_id, comment, user)
+    return card
+
+
+def unfreeze_deadline(deadline: datetime | None, started_at: datetime, now: datetime) -> datetime | None:
+    """Дедлайн после разморозки: текущий + длительность паузы (сдвиг, а не накопление секунд)."""
+    if deadline is None:
+        return None
+    paused = max(0.0, (now - started_at).total_seconds())
+    return to_ms_utc(deadline + timedelta(seconds=paused))
+
+
+async def unfreeze(
+    doc: dict[str, Any], *, user: dict[str, Any] | None = None, auto: bool = False
+) -> dict[str, Any]:
+    """Снятие паузы: meta.freeze убирается целиком ($unset, чтобы работал $exists-фильтр
+    sla_monitor), дедлайн сдвигается на длительность заморозки. Воркер вызывает ту же
+    функцию по расписанию для авто-разморозки (auto=True)."""
+    incident_id = doc["_id"]
+    freeze_meta = doc["meta"].get("freeze") or {}
+    started_at = freeze_meta.get("startedAt")
+    if started_at is None:
+        raise ConflictError("Инцидент не заморожен")
+    if doc["meta"].get("deletedAt"):
+        raise ConflictError("Инцидент в архиве")
+    now = _now()
+    old_deadline = doc["data"].get("deadline")
+    new_deadline = unfreeze_deadline(old_deadline, started_at, now)
+    update: dict[str, Any] = {"$set": {"meta.updatedAt": now}, "$unset": {"meta.freeze": ""}}
+    if new_deadline != old_deadline:
+        update["$set"]["data.deadline"] = new_deadline
+    res = await get_db().incidents.update_one(
+        {"_id": incident_id, "meta.freeze.startedAt": {"$exists": True}}, update
+    )
+    if res.matched_count == 0:
+        raise ConflictError("Инцидент изменился, обновите карточку")
+    await get_db().incident_events.insert_one(
+        {
+            "incidentId": incident_id,
+            "at": now,
+            "type": "unfrozen",
+            "source": "system" if auto else "api",
+            "actor": actor_of(user),
+            "kinds": ["unfrozen"],
+            "changes": [{"field": "deadline", "old": old_deadline, "new": new_deadline}]
+            if new_deadline != old_deadline
+            else [],
+            "groupsEntered": [],
+            "groupsLeft": [],
+            "auto": auto,
+        }
+    )
+    doc["meta"].pop("freeze", None)
+    doc["meta"]["updatedAt"] = now
+    if new_deadline is not None:
+        doc["data"]["deadline"] = new_deadline
+    card = presenter.card(doc, now)
+    await rabbit.publish(
+        "incident.unfrozen", {"incidentId": incident_id, "auto": auto, "actor": actor_of(user), "card": card}
+    )
+    return card
+
+
+async def unfreeze_due() -> int:
+    """Авто-разморозка по endsAt; вызывается воркером с той же периодичностью, что и SLA-контроль."""
+    now = _now()
+    count = 0
+    query = {"meta.deletedAt": None, "meta.freeze.endsAt": {"$ne": None, "$lte": now}}
+    async for doc in get_db().incidents.find(query):
+        try:
+            await unfreeze(doc, auto=True)
+        except ConflictError:
+            continue  # разморожена вручную, пока воркер обрабатывал выборку
+        count += 1
+    return count
 
 
 async def add_comment(incident_id: str, text: str, user: dict[str, Any]) -> dict[str, Any]:

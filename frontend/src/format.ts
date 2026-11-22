@@ -101,8 +101,10 @@ export interface LiveSla {
 
 export function liveSla(card: Card, now: number): LiveSla {
   const sla = card.sla
+  const frozen = card.freeze != null
   const anchor = safeParse(card.updatedAt)
-  const elapsed = anchor === null ? 0 : Math.max(0, (now - anchor) / 1000)
+  // у замороженного sla зафиксирован сервером на момент начала паузы — секунды не тикают
+  const elapsed = frozen || anchor === null ? 0 : Math.max(0, (now - anchor) / 1000)
   switch (sla.state) {
     case 'resolved': {
       const from = safeParse(card.submitDate)
@@ -113,7 +115,7 @@ export function liveSla(card: Card, now: number): LiveSla {
     case 'none':
       return { state: 'none', label: 'Срок не задан', breached: false }
     case 'breached': {
-      const overdue = (sla.overdueSeconds ?? 0) + elapsed
+      const overdue = frozen ? Math.max(0, -(sla.timeLeftSeconds ?? 0)) : (sla.overdueSeconds ?? 0) + elapsed
       return { state: 'breach', label: `Просрочен на ${formatOverdue(overdue)}`, breached: true }
     }
     case 'ok':
@@ -130,11 +132,12 @@ export function liveSla(card: Card, now: number): LiveSla {
 /** Крупное значение для SLA-блока панели: остаток, просрочка или факт решения. */
 export function slaBigValue(card: Card, now: number): string {
   const sla = liveSla(card, now)
+  const frozen = card.freeze != null
   const anchor = safeParse(card.updatedAt)
-  const elapsed = anchor === null ? 0 : Math.max(0, (now - anchor) / 1000)
+  const elapsed = frozen || anchor === null ? 0 : Math.max(0, (now - anchor) / 1000)
   switch (sla.state) {
     case 'breach':
-      return formatOverdue((card.sla.overdueSeconds ?? 0) + elapsed)
+      return formatOverdue(frozen ? Math.max(0, -(card.sla.timeLeftSeconds ?? 0)) : (card.sla.overdueSeconds ?? 0) + elapsed)
     case 'ok':
     case 'warning':
     case 'danger':

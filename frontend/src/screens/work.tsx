@@ -134,7 +134,7 @@ function IncidentDetailBox({ detail, card, actions }: { detail: IncidentDetail |
 
 function MyCard({ card, selected, onSelect }: { card: Card; selected: boolean; onSelect: () => void }) {
   const { state } = useApp()
-  const frozen = state.freeze[card.id] !== undefined
+  const frozen = card.freeze != null
   return (
     <div className="acard" style={{ borderColor: selected ? 'var(--blue)' : undefined, borderLeftWidth: 4 }} onClick={onSelect}>
       <div className="acard__top">

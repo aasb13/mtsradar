@@ -263,6 +263,19 @@ export function ackIncident(id: string): Promise<unknown> {
   return request<unknown>(`/incidents/${encodeURIComponent(id)}/ack`, { method: 'POST' })
 }
 
+/** Заморозка SLA: пауза таймера и алертов до разморозки (вручную или по расписанию). */
+export function freezeIncident(
+  id: string,
+  body: { reason: string; comment?: string; autoUnfreezeAt?: string },
+): Promise<IncidentDetail> {
+  return request<IncidentDetail>(`/incidents/${encodeURIComponent(id)}/freeze`, { method: 'POST', body })
+}
+
+/** Разморозка: срок сдвигается вперёд на длительность заморозки. */
+export function unfreezeIncident(id: string): Promise<IncidentDetail> {
+  return request<IncidentDetail>(`/incidents/${encodeURIComponent(id)}/unfreeze`, { method: 'POST' })
+}
+
 export function deleteIncident(id: string): Promise<void> {
   return request<void>(`/incidents/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }

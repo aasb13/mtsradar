@@ -23,11 +23,11 @@ import type {
 export type ConnectionState = 'connecting' | 'online' | 'reconnecting'
 export type Theme = 'light' | 'dark'
 
-export interface FreezeRecord {
-  remainingSeconds: number
-  frozenAt: number
-  reason: string | null
-  autoAt: number | null
+/** Тело запроса заморозки; время разморозки по расписанию — ISO-строка. */
+export interface FreezeRequest {
+  reason: string
+  comment?: string
+  autoUnfreezeAt?: string
 }
 
 interface State {
@@ -58,12 +58,10 @@ interface State {
   panelId: string | null
   assignId: string | null
   freezeId: string | null
-  freeze: Record<string, FreezeRecord>
   now: number
 }
 
 const THEME_KEY = 'radar-theme'
-const FREEZE_KEY = 'radar-freeze'
 // локальные записи администратора: серверный справочник выводится из инцидентов,
 // поэтому добавленные до первого инцидента продукты/команды живут здесь
 const LOCAL_PRODUCTS_KEY = 'radar-local-products'
@@ -95,13 +93,6 @@ function makeInitialState(): State {
   } catch (err) {
     console.error('Не удалось прочитать тему', err)
   }
-  let freeze: Record<string, FreezeRecord> = {}
-  try {
-    const raw = window.localStorage.getItem(FREEZE_KEY)
-    if (raw !== null) freeze = JSON.parse(raw) as Record<string, FreezeRecord>
-  } catch (err) {
-    console.error('Не удалось прочитать заморозки', err)
-  }
   return {
     user: null,
     authError: null,
@@ -128,7 +119,6 @@ function makeInitialState(): State {
     panelId: null,
     assignId: null,
     freezeId: null,
-    freeze,
     now: Date.now(),
   }
 }
@@ -161,8 +151,6 @@ export type Action =
   | { type: 'OPEN_PANEL'; id: string | null }
   | { type: 'OPEN_ASSIGN'; id: string | null }
   | { type: 'OPEN_FREEZE'; id: string | null }
-  | { type: 'FREEZE'; id: string; record: FreezeRecord }
-  | { type: 'UNFREEZE'; id: string }
 
 function toast(state: State, item: ToastItem): State {
   return { ...state, toasts: [...state.toasts.filter(t => t.key !== item.key), item].slice(-TOAST_LIMIT) }
@@ -261,25 +249,6 @@ function reducer(state: State, action: Action): State {
       return { ...state, assignId: action.id }
     case 'OPEN_FREEZE':
       return { ...state, freezeId: action.id }
-    case 'FREEZE': {
-      const freeze = { ...state.freeze, [action.id]: action.record }
-      try {
-        window.localStorage.setItem(FREEZE_KEY, JSON.stringify(freeze))
-      } catch (err) {
-        console.error('Не удалось сохранить заморозку', err)
-      }
-      return { ...state, freeze }
-    }
-    case 'UNFREEZE': {
-      const freeze = { ...state.freeze }
-      delete freeze[action.id]
-      try {
-        window.localStorage.setItem(FREEZE_KEY, JSON.stringify(freeze))
-      } catch (err) {
-        console.error('Не удалось сохранить заморозки', err)
-      }
-      return { ...state, freeze }
-    }
     default: {
       const never: never = action
       void never
@@ -310,8 +279,8 @@ interface AppContextValue {
   doTransition: (card: Card, toStateId: number, extra?: { stateReason?: string; solution?: string; comment?: string }) => Promise<boolean>
   doAck: (id: string) => Promise<void>
   doAssign: (card: Card, team: string, executorUserId: string | null) => Promise<boolean>
-  doFreeze: (id: string, record: FreezeRecord) => void
-  doUnfreeze: (id: string) => void
+  doFreeze: (id: string, body: FreezeRequest) => Promise<boolean>
+  doUnfreeze: (id: string) => Promise<boolean>
   showToast: (text: string, tone?: ToastItem['tone']) => void
 }
 
@@ -495,6 +464,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
             }
             break
           }
+          case 'incident.frozen':
+          case 'incident.unfrozen': {
+            const card = cardFrom(payload.card)
+            if (card !== null) {
+              dispatch({ type: 'UPSERT_CARDS', cards: [card] })
+              scheduleDashboardRefresh()
+            }
+            const id = String(payload.incidentId ?? card?.id ?? '')
+            if (event.type === 'incident.frozen') {
+              showToast(`${id} заморожен — SLA-таймер на паузе`, 'info')
+            } else if (payload.auto === true) {
+              showToast(`${id} разморожен по расписанию`, 'info')
+            } else {
+              showToast(`${id} разморожен`, 'info')
+            }
+            break
+          }
           case 'incident.removed':
             dispatch({ type: 'REMOVE_CARD', id: String(payload.incidentId ?? '') })
             scheduleDashboardRefresh()
@@ -541,19 +527,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     })
     return dispose
   }, [user, refreshDashboard, refreshBoard, refreshStats, scheduleDashboardRefresh, showToast])
-
-  // авто-разморозка по времени
-  useEffect(() => {
-    const frozen = Object.entries(state.freeze)
-    if (frozen.length === 0) return
-    const now = Date.now()
-    for (const [id, record] of frozen) {
-      if (record.autoAt !== null && record.autoAt <= now) {
-        dispatch({ type: 'UNFREEZE', id })
-        showToast(`${id} разморожен по расписанию`, 'info')
-      }
-    }
-  }, [state.now, state.freeze, showToast])
 
   const login = useCallback(
     async (email: string, password: string, remember = true) => {
@@ -650,13 +623,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [scheduleDashboardRefresh, showToast],
   )
 
-  const doFreeze = useCallback((id: string, record: FreezeRecord) => {
-    dispatch({ type: 'FREEZE', id, record })
-  }, [])
+  const doFreeze = useCallback(
+    async (id: string, body: FreezeRequest) => {
+      try {
+        const detail = await api.freezeIncident(id, body)
+        dispatch({ type: 'UPSERT_CARDS', cards: [detail] })
+        scheduleDashboardRefresh()
+        return true
+      } catch (err) {
+        if (err instanceof ApiError) showToast(err.message, 'warning')
+        else {
+          console.error('Ошибка заморозки', err)
+          showToast('Не удалось заморозить инцидент: сервер недоступен', 'critical')
+        }
+        return false
+      }
+    },
+    [scheduleDashboardRefresh, showToast],
+  )
 
-  const doUnfreeze = useCallback((id: string) => {
-    dispatch({ type: 'UNFREEZE', id })
-  }, [])
+  const doUnfreeze = useCallback(
+    async (id: string) => {
+      try {
+        const detail = await api.unfreezeIncident(id)
+        dispatch({ type: 'UPSERT_CARDS', cards: [detail] })
+        scheduleDashboardRefresh()
+        return true
+      } catch (err) {
+        if (err instanceof ApiError) showToast(err.message, 'warning')
+        else {
+          console.error('Ошибка разморозки', err)
+          showToast('Не удалось разморозить инцидент: сервер недоступен', 'critical')
+        }
+        return false
+      }
+    },
+    [scheduleDashboardRefresh, showToast],
+  )
 
   // звук на новый критический (карточка стала критической и не была)
   const criticalIdsRef = useRef<Set<string>>(new Set())

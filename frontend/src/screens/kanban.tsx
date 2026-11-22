@@ -169,7 +169,7 @@ export function IncidentCard({ card, draggable = false, onDragStart, onDragEnd }
   onDragEnd?: () => void
 }) {
   const { state, dispatch } = useApp()
-  const frozen = state.freeze[card.id] !== undefined
+  const frozen = card.freeze != null
   const critical = card.isCritical && card.isActive && !card.isResolved
   const overdue = !critical && card.sla.state === 'breached'
   return (

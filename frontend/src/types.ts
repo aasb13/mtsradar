@@ -21,6 +21,14 @@ export interface AiCardInfo {
   stale?: boolean
 }
 
+/** Серверная заморозка SLA: null — не заморожен, объект — идёт пауза. */
+export interface CardFreeze {
+  startedAt: string
+  endsAt: string | null
+  reason: string
+  actor: { id?: string; name?: string | null } | null
+}
+
 export interface Card {
   id: string
   header: string | null
@@ -46,6 +54,7 @@ export interface Card {
   isResolved: boolean
   isNewCritical: boolean
   sla: Sla
+  freeze?: CardFreeze | null
   acknowledged: { userId: string; name?: string | null; at: string } | null
   ai: AiCardInfo | null
   itsmUrl: string
