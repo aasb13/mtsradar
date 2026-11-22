@@ -390,14 +390,13 @@ async def add_member(incident_id: str, body: MemberIn, user: CoordinatorUser) ->
     """Добавить разработчика в инцидент: он увидит инцидент в приложении и получит уведомление."""
     await _doc_or_404(incident_id)
     dev = await get_db().users.find_one({"_id": body.userId, "deletedAt": None})
-    if not dev or dev["role"] != "developer":
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY, "Добавлять можно только пользователей с ролью developer"
-        )
-    res = await get_db().incidents.update_one({"_id": incident_id}, {"$addToSet": {"members": body.userId}})
-    if res.modified_count == 0:
-        return presenter.card(await get_doc(incident_id), _now())  # уже был добавлен
-    return await _members_changed(incident_id, user, [body.userId], [])
+    if not dev:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Пользователь не найден")
+    try:
+        await incident_actions.add_member(incident_id, dev, user)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e)) from e
+    return presenter.card(await get_doc(incident_id), _now())
 
 
 @router.delete("/incidents/{incident_id}/members/{member_id}")

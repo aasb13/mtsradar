@@ -16,7 +16,7 @@ from typing import Any
 
 from app.bus import rabbit
 from app.db.mongo import get_db
-from app.domain.enums import CLOSED, FINAL_STATE_IDS, PRIORITIES, RESOLVED, STATES, TRANSITIONS
+from app.domain.enums import CLOSED, FINAL_STATE_IDS, PRIORITIES, RESOLVED, Role, STATES, TRANSITIONS
 from app.domain.normalize import reconcile_codes, sanitize, to_ms_utc
 from app.services import presenter
 from app.services.exporter import maybe_write_back
@@ -264,6 +264,39 @@ async def add_comment(incident_id: str, text: str, user: dict[str, Any]) -> dict
         "incident.comment_added", {"incidentId": incident_id, "comment": presenter.public(comment)}
     )
     return presenter.public(comment)
+
+
+async def add_member(incident_id: str, dev: dict[str, Any], user: dict[str, Any]) -> bool:
+    """Добавить разработчика в участники: он увидит инцидент и получит уведомление.
+
+    Общий код REST (routes/incidents.py) и ИИ-агента (chat_tools.py) — назначение исполнителя
+    без ITSM-логина даёт доступ только через участие. False — уже был в участниках.
+    """
+    if dev.get("role") != Role.DEVELOPER:
+        raise ValueError("Добавлять можно только пользователей с ролью developer")
+    now = _now()
+    res = await get_db().incidents.update_one({"_id": incident_id}, {"$addToSet": {"members": dev["_id"]}})
+    if res.modified_count == 0:
+        return False
+    await get_db().incident_events.insert_one(
+        {
+            "incidentId": incident_id,
+            "at": now,
+            "type": "members_changed",
+            "source": "api",
+            "actor": actor_of(user),
+            "kinds": ["members_changed"],
+            "changes": [{"field": "members", "added": [dev["_id"]], "removed": []}],
+            "groupsEntered": [],
+            "groupsLeft": [],
+        }
+    )
+    card = presenter.card(await get_doc(incident_id), now)
+    await rabbit.publish(
+        "incident.members_changed",
+        {"incidentId": incident_id, "actor": actor_of(user), "added": [dev["_id"]], "removed": [], "card": card},
+    )
+    return True
 
 
 async def archive(doc: dict[str, Any], user: dict[str, Any]) -> None:
