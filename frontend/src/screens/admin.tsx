@@ -551,7 +551,7 @@ function DictItemModal({
   developers?: User[]
   reloadUsers?: () => Promise<void>
 }) {
-  const { state, dispatch, doRenameDictItem, showToast } = useApp()
+  const { state, dispatch, doRenameDictItem, showToast, refreshDictionaries } = useApp()
   const [value, setValue] = useState(name)
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)
@@ -625,12 +625,26 @@ function DictItemModal({
     }
   }
 
-  const remove = () => {
+  const remove = async () => {
     if (!confirming) {
       setConfirming(true)
       return
     }
+    // команда из базы удаляется на сервере; выведенные из инцидентов значения скрываются локально
+    if (!isProduct && (state.dictionaries?.customTeams ?? []).includes(name)) {
+      try {
+        await api.deleteTeam(name)
+      } catch (err) {
+        if (err instanceof api.ApiError) showToast(err.message, 'warning')
+        else {
+          console.error('Не удалось удалить команду', err)
+          showToast('Не удалось удалить команду: сервер недоступен', 'critical')
+        }
+        return
+      }
+    }
     dispatch({ type: 'REMOVE_DICT_ITEM', field, name })
+    await refreshDictionaries()
     showToast(isProduct ? `Продукт «${name}» удалён из справочника` : `Команда «${name}» удалена из справочника`, 'info')
     onClose()
   }
@@ -643,7 +657,7 @@ function DictItemModal({
       width={480}
       footer={
         <>
-          <Button variant="danger" onClick={remove}>
+          <Button variant="danger" onClick={() => void remove()}>
             {confirming ? 'Подтвердить удаление' : 'Удалить'}
           </Button>
           <span className="spacer" />
@@ -723,11 +737,12 @@ type TeamMemberRow =
   | { kind: 'executor'; name: string; load: number }
 
 export function AdminTeamsPage() {
-  const { state, dispatch, showToast } = useApp()
+  const { state, dispatch, showToast, refreshDictionaries } = useApp()
   const [users, setUsers] = useState<User[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [newName, setNewName] = useState('')
+  const [creating, setCreating] = useState(false)
   const [manage, setManage] = useState<string | null>(null)
 
   const reloadUsers = useCallback(async () => {
@@ -809,6 +824,33 @@ export function AdminTeamsPage() {
 
   const maxLoad = Math.max(1, ...teamStats.map(t => t.active))
   const developerCount = teamStats.reduce((sum, t) => sum + t.members.length, 0)
+
+  const createTeam = async () => {
+    const name = newName.trim()
+    if (name === '') {
+      showToast('Введите название команды', 'warning')
+      return
+    }
+    if (creating) return
+    setCreating(true)
+    try {
+      await api.createTeam(name)
+      // имя могло быть скрыто на этом браузере после прошлого удаления — возвращаем его
+      dispatch({ type: 'RESTORE_DICT_ITEM', field: 'assignedGroups', name })
+      await refreshDictionaries()
+      setNewName('')
+      setCreateOpen(false)
+      showToast(`Команда «${name}» создана`, 'success')
+    } catch (err) {
+      if (err instanceof api.ApiError) showToast(err.message, 'warning')
+      else {
+        console.error('Не удалось создать команду', err)
+        showToast('Не удалось создать команду: сервер недоступен', 'critical')
+      }
+    } finally {
+      setCreating(false)
+    }
+  }
 
   return (
     <>
@@ -979,20 +1021,7 @@ export function AdminTeamsPage() {
               <Button variant="secondary" onClick={() => setCreateOpen(false)}>
                 Отмена
               </Button>
-              <Button
-                variant="primary"
-                onClick={() => {
-                  const name = newName.trim()
-                  if (name === '') {
-                    showToast('Введите название команды', 'warning')
-                    return
-                  }
-                  dispatch({ type: 'ADD_DICT_ITEMS', field: 'assignedGroups', items: [name] })
-                  setNewName('')
-                  setCreateOpen(false)
-                  showToast(`Команда «${name}» создана`, 'success')
-                }}
-              >
+              <Button variant="primary" disabled={creating} onClick={() => void createTeam()}>
                 Создать
               </Button>
             </>

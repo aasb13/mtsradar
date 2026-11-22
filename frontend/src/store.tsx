@@ -634,6 +634,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
             }
             break
           }
+          case 'team.changed':
+            // состав команд (создана/переименована/удалена): перечитываем справочник
+            void refreshDictionaries()
+            break
           case 'chat.updated':
             // чат с BigDad: открытый экран чата дополняет сообщения, список сессий обновляется
             window.dispatchEvent(new CustomEvent('radar:chat', { detail: payload }))
@@ -653,7 +657,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       },
     })
     return dispose
-  }, [user, refreshDashboard, refreshBoard, refreshStats, scheduleDashboardRefresh, refreshCoordinatorCount, showToast])
+  }, [user, refreshDashboard, refreshBoard, refreshStats, refreshDictionaries, scheduleDashboardRefresh, refreshCoordinatorCount, showToast])
 
   const loginWithPair = useCallback(
     async (pair: TokenPair, remember = true) => {
@@ -866,7 +870,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return false
       }
     },
-    [showToast],
+    [showToast, refreshDictionaries],
   )
 
   // звук на новый критический (карточка стала критической и не была)
@@ -902,6 +906,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       refreshDashboard,
       refreshBoard,
       refreshStats,
+      refreshDictionaries,
       doTransition,
       doAck,
       doAssign,
@@ -910,7 +915,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       doRenameDictItem,
       showToast,
     }),
-    [state, login, loginWithPair, logout, register, refreshDashboard, refreshBoard, refreshStats, doTransition, doAck, doAssign, doFreeze, doUnfreeze, doRenameDictItem, showToast],
+    [state, login, loginWithPair, logout, register, refreshDashboard, refreshBoard, refreshStats, refreshDictionaries, doTransition, doAck, doAssign, doFreeze, doUnfreeze, doRenameDictItem, showToast],
   )
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>
