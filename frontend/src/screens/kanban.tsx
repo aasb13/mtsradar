@@ -80,22 +80,22 @@ export function KpiRow() {
     <div className="kpis">
       <div className="kpi">
         <p className="kpi__label">Открыто</p>
-        <p className="kpi__value">{kpi.active}</p>
+        <p className="kpi__value" key={kpi.active}>{kpi.active}</p>
         <p className="kpi__sub">{createdLastHour > 0 ? `+${createdLastHour} за час` : 'без изменений за час'}</p>
       </div>
       <div className="kpi">
         <p className="kpi__label">Критических</p>
-        <p className="kpi__value kpi__value--red">{kpi.critical}</p>
+        <p className="kpi__value kpi__value--red" key={kpi.critical}>{kpi.critical}</p>
         <p className="kpi__sub">{firstCritical !== undefined ? firstCritical.id : '—'}</p>
       </div>
       <div className="kpi">
         <p className="kpi__label">Просрочено</p>
-        <p className="kpi__value kpi__value--red">{kpi.breached}</p>
+        <p className="kpi__value kpi__value--red" key={kpi.breached}>{kpi.breached}</p>
         <p className="kpi__sub">{firstBreached !== undefined ? firstBreached.id : '—'}</p>
       </div>
       <div className="kpi">
         <p className="kpi__label">Решено сегодня</p>
-        <p className="kpi__value kpi__value--red">{kpi.resolvedToday}</p>
+        <p className="kpi__value kpi__value--red" key={kpi.resolvedToday}>{kpi.resolvedToday}</p>
         <p className="kpi__sub">{state.resolvedYesterday > 0 ? `+${kpi.resolvedToday - state.resolvedYesterday} к вчера` : '—'}</p>
       </div>
     </div>
@@ -223,7 +223,7 @@ export function KanbanPage() {
 
   // первый BOOT_OK ещё не пришёл — не рисуем пустую доску (после хуков: их порядок не должен зависеть от данных)
   if (state.dictionaries === null) {
-    return <p style={{ color: 'var(--text-2)', padding: 24 }}>Загрузка…</p>
+    return <p className="loading-text" style={{ color: 'var(--text-2)', padding: 24 }}>Загрузка…</p>
   }
 
   const columns = BOARD_COLUMNS.map(column => ({
@@ -358,7 +358,7 @@ export function KanbanPage() {
               <div className="column__head">
                 <span className="column__dot" style={{ background: COLUMN_DOTS[column.key] }} />
                 <span className="column__title">{column.title}</span>
-                <span className="column__count">{column.cards.length}</span>
+                <span className="column__count" key={column.cards.length}>{column.cards.length}</span>
                 <span className="column__spacer" />
                 <span style={{ color: 'var(--text-3)', display: 'flex' }}>
                   <DotsIcon size={16} />

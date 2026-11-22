@@ -38,8 +38,8 @@ function DailyChart({ points }: { points: DayPoint[] }) {
           </text>
         </g>
       ))}
-      <path d={path('created')} fill="none" stroke="var(--violet)" strokeWidth="2.5" />
-      <path d={path('resolved')} fill="none" stroke="var(--chart-2)" strokeWidth="2.5" />
+      <path d={path('created')} fill="none" stroke="var(--violet)" strokeWidth="2.5" pathLength={1} />
+      <path d={path('resolved')} fill="none" stroke="var(--chart-2)" strokeWidth="2.5" pathLength={1} />
       {points.map((p, i) => (
         <g key={p.day}>
           <circle cx={padX + i * stepX} cy={yOf(p.created)} r="3" fill="var(--violet)" />
@@ -264,22 +264,22 @@ export function StatsPage() {
       <div className="kpis">
         <div className="kpi">
           <p className="kpi__label">Инцидентов за период</p>
-          <p className="kpi__value">{periodCreated}</p>
+          <p className="kpi__value" key={periodCreated}>{periodCreated}</p>
           <p className="kpi__sub">решено за период: {periodResolved}</p>
         </div>
         <div className="kpi">
           <p className="kpi__label">Среднее время решения</p>
-          <p className="kpi__value">{formatMinutes(avgResolutionPeriod)}</p>
+          <p className="kpi__value" key={formatMinutes(avgResolutionPeriod)}>{formatMinutes(avgResolutionPeriod)}</p>
           <p className="kpi__sub">по {periodResolved} решённым</p>
         </div>
         <div className="kpi">
           <p className="kpi__label">SLA выполнен</p>
-          <p className="kpi__value">{slaMet === null ? '—' : `${slaMet}%`}</p>
+          <p className="kpi__value" key={slaMet}>{slaMet === null ? '—' : `${slaMet}%`}</p>
           <p className="kpi__sub">решено в срок до дедлайна</p>
         </div>
         <div className="kpi">
           <p className="kpi__label">Просрочено</p>
-          <p className="kpi__value kpi__value--red">{breachedNow}</p>
+          <p className="kpi__value kpi__value--red" key={breachedNow}>{breachedNow}</p>
           <p className="kpi__sub">активные сейчас</p>
         </div>
       </div>
@@ -298,7 +298,7 @@ export function StatsPage() {
             </span>
           </div>
         </div>
-        <DailyChart points={points} />
+        <DailyChart key={period} points={points} />
       </div>
 
       <div className="stats-teams-head">

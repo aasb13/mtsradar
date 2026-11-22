@@ -160,7 +160,7 @@ function BellMenu({ onClose }: { onClose: () => void }) {
         </button>
       </div>
       {loading ? (
-        <div className="bell-menu__empty">Загрузка…</div>
+        <div className="bell-menu__empty loading-text">Загрузка…</div>
       ) : items.length === 0 ? (
         <div className="bell-menu__empty">Уведомлений нет — всё спокойно</div>
       ) : (
@@ -323,6 +323,7 @@ export function ToastStack() {
           <button type="button" className="toast__close" onClick={() => dispatch({ type: 'DISMISS_TOAST', key: t.key })} aria-label="Скрыть">
             <CloseIcon size={14} />
           </button>
+          {t.tone !== 'critical' && <span className="toast__timer" aria-hidden="true" />}
         </div>
       ))}
     </div>

@@ -128,7 +128,7 @@ export function AttentionPage() {
           <section key={level.priorityId} className="lvl">
             <div className="lvl__head" style={{ background: LEVEL_BG[level.priorityId] }}>
               <span>{level.title}</span>
-              <span className="lvl__count">{level.count}</span>
+              <span className="lvl__count" key={level.count}>{level.count}</span>
             </div>
             <div>
               {level.items.map(card => (
