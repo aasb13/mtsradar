@@ -472,6 +472,25 @@ export function Spinner({ size = 18 }: IconProps) {
   )
 }
 
+export function Loading({
+  label = 'Загрузка…',
+  size = 20,
+  className = '',
+  style,
+}: {
+  label?: string | null
+  size?: number
+  className?: string
+  style?: CSSProperties
+}) {
+  return (
+    <div className={`loading${className !== '' ? ` ${className}` : ''}`} style={style} role="status">
+      <Spinner size={size} />
+      {label !== null && <span>{label}</span>}
+    </div>
+  )
+}
+
 export function SearchIcon({ size }: IconProps) {
   return svg(size, (
     <>

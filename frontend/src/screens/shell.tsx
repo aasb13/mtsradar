@@ -246,10 +246,13 @@ export function Header() {
   const route = useRoute()
   const user = state.user
   const [menu, setMenu] = useState<'bell' | 'avatar' | null>(null)
+  const [searchOpen, setSearchOpen] = useState(false)
+  // compact — поиск сжат до иконки, tight — даже после этого меню не влезает и прокручивается
+  const [compact, setCompact] = useState(false)
+  const [tight, setTight] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
-  if (user === null) return null
-  const items = NAV[user.role] ?? []
-  const showStats = user.role === 'coordinator' || user.role === 'admin'
+  const navRef = useRef<HTMLElement>(null)
+  const role = user?.role
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -259,10 +262,39 @@ export function Header() {
     return () => window.removeEventListener('mousedown', onDown)
   }, [])
 
+  useEffect(() => {
+    const nav = navRef.current
+    if (nav === null) return
+    // запас, при котором подпись «Поиск» (+ её отступ) точно поместится обратно
+    const SEARCH_LABEL_SLACK = 80
+    const measure = () => {
+      // пока поиск раскрыт, его поле само меняет ширину меню — не переключаем режим
+      if (searchOpen) return
+      const slack = nav.clientWidth - nav.scrollWidth
+      if (slack < 0) {
+        setCompact(true)
+        setTight(true)
+      } else if (compact && slack > SEARCH_LABEL_SLACK) {
+        setCompact(false)
+        setTight(false)
+      } else if (compact) {
+        setTight(false)
+      }
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(nav)
+    return () => ro.disconnect()
+  }, [compact, searchOpen, role])
+
+  if (user === null) return null
+  const items = NAV[user.role] ?? []
+  const showStats = user.role === 'coordinator' || user.role === 'admin'
+
   return (
-    <header className="header">
+    <header className={`header${compact ? ' header--compact' : ''}${tight ? ' header--tight' : ''}`}>
       <Logo />
-      <nav className="nav">
+      <nav className="nav" ref={navRef}>
         {items.map(item => (
           <a
             key={item.path}
@@ -278,7 +310,9 @@ export function Header() {
         ))}
       </nav>
       <div className="header__right" ref={wrapRef}>
-        <SearchBox />
+        <div className="searchwrap">
+          <SearchBox compact={compact} open={searchOpen} onOpenChange={setSearchOpen} />
+        </div>
         <div className="bell">
           <button
             type="button"

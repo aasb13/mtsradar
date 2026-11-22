@@ -136,7 +136,7 @@ a {
   z-index: 40;
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 1560px) {
   .header {
     padding: 0 32px;
   }
@@ -181,8 +181,20 @@ a {
   align-items: center;
   gap: 28px;
   flex: 1;
+  min-width: 0;
   justify-content: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  /* переполнение гасится прокруткой, а не переносом на вторую строку шапки */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.nav::-webkit-scrollbar {
+  display: none;
+}
+
+.header--tight .nav {
+  justify-content: flex-start;
 }
 
 .nav__link {
@@ -246,6 +258,24 @@ a {
 .headerbtn--primary:hover {
   filter: none;
   background: var(--red-hover);
+}
+
+.searchwrap {
+  position: relative;
+  display: flex;
+}
+
+/* В компактной шапке раскрытый поиск не раздвигает строку, а выпадает под иконку */
+@media (min-width: 601px) {
+  .header--compact .searchinput {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    width: 320px;
+    background: var(--panel-2);
+    box-shadow: var(--shadow);
+    z-index: 60;
+  }
 }
 
 .bell {
@@ -4127,6 +4157,14 @@ body {
 .spinner {
   flex-shrink: 0;
   animation: spin 0.9s linear infinite;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-2);
 }
 
 /* заполнение прогресс-баров растёт при появлении и плавно меняется при обновлении */

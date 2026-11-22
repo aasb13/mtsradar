@@ -95,17 +95,10 @@ button,
     gap: 20px;
   }
 
-  /* Меню не переносится на вторую строку, а прокручивается */
+  /* Меню выравнивается по левому краю и прокручивается */
   .nav {
-    flex-wrap: nowrap;
     justify-content: flex-start;
-    overflow-x: auto;
-    scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
-  }
-
-  .nav::-webkit-scrollbar {
-    display: none;
   }
 
   .pagehead {
@@ -161,16 +154,9 @@ button,
     order: 3;
     flex: 1 0 100%;
     justify-content: flex-start;
-    flex-wrap: nowrap;
     gap: 20px;
     padding: 2px 0;
-    overflow-x: auto;
-    scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
-  }
-
-  .nav::-webkit-scrollbar {
-    display: none;
   }
 
   .nav__link {
