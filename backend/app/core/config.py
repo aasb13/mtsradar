@@ -18,10 +18,12 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     # --- инфраструктура ---
-    mongo_url: str = "mongodb://localhost:27017"
+    # 127.0.0.1, не localhost: localhost резолвится в ::1, а IPv6-петля в docker
+    # на части машин зависает на рукопожатии (RabbitMQ/Redis отвечают только по IPv4)
+    mongo_url: str = "mongodb://127.0.0.1:27017"
     mongo_db: str = "incidents"
-    redis_url: str = "redis://localhost:6379/0"
-    rabbit_url: str = "amqp://guest:guest@localhost:5672/"
+    redis_url: str = "redis://127.0.0.1:6379/0"
+    rabbit_url: str = "amqp://guest:guest@127.0.0.1:5672/"
     events_exchange: str = "incidents.events"
 
     # --- безопасность ---
