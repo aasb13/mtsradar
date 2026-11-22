@@ -38,6 +38,7 @@ def public_user(u: dict[str, Any]) -> dict[str, Any]:
         "fullName": u.get("fullName"),
         "role": u["role"],
         "itsmLogin": u.get("itsmLogin"),
+        "team": u.get("team"),
         "telegramChatId": u.get("telegramChatId"),
         "notificationSettings": u.get("notificationSettings") or default_notification_settings(),
         "createdAt": u.get("createdAt"),

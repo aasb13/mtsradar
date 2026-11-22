@@ -223,6 +223,7 @@ export interface User {
   fullName: string | null
   role: Role
   itsmLogin: string | null
+  team: string | null
   telegramChatId: string | null
   notificationSettings: Record<string, unknown>
   createdAt: string | null
@@ -349,6 +350,8 @@ export interface ToastItem {
   tone: 'info' | 'success' | 'warning' | 'critical'
   text: string
   createdAt: number
+  /** Инцидент, о котором сообщает уведомление: клик ведёт на канбан инцидентов. */
+  incidentId?: string
 }
 
 /** Заявка на регистрацию: хранится на сервере до решения администратора. */

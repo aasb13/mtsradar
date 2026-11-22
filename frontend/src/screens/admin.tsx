@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import * as api from '../api'
 import { formatDurationWords, formatShort, priorityMeta, relativeTime } from '../format'
 import { useApp } from '../store'
@@ -542,17 +542,35 @@ function DictItemModal({
   field,
   name,
   onClose,
+  developers = [],
+  reloadUsers,
 }: {
   field: 'products' | 'assignedGroups'
   name: string
   onClose: () => void
+  developers?: User[]
+  reloadUsers?: () => Promise<void>
 }) {
   const { state, dispatch, doRenameDictItem, showToast } = useApp()
   const [value, setValue] = useState(name)
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [memberBusy, setMemberBusy] = useState(false)
+  const [addId, setAddId] = useState('')
   const isProduct = field === 'products'
   const trimmed = value.trim()
+
+  const inTeam = useMemo(() => developers.filter(d => d.team === name), [developers, name])
+  const candidates = useMemo(() => developers.filter(d => d.team !== name), [developers, name])
+  const candidateOptions = useMemo(
+    () =>
+      candidates.map(d => ({
+        value: d.id,
+        label: `${d.fullName ?? d.email}${d.team !== null ? ` · сейчас в «${d.team}»` : ''}`,
+      })),
+    [candidates],
+  )
+  const addValue = candidates.some(d => d.id === addId) ? addId : (candidates[0]?.id ?? '')
 
   const openCount = useMemo(
     () =>
@@ -565,8 +583,46 @@ function DictItemModal({
     if (busy || trimmed === '' || trimmed === name) return
     setBusy(true)
     const ok = await doRenameDictItem(field, name, trimmed)
+    if (ok && !isProduct) await reloadUsers?.()
     setBusy(false)
     if (ok) onClose()
+  }
+
+  const addMember = async () => {
+    const dev = candidates.find(d => d.id === addValue)
+    if (dev === undefined || reloadUsers === undefined || memberBusy) return
+    setMemberBusy(true)
+    try {
+      await api.patchUser(dev.id, { team: name })
+      await reloadUsers()
+      showToast(`${dev.fullName ?? dev.email} добавлен в команду «${name}»`, 'success')
+    } catch (err) {
+      if (err instanceof api.ApiError) showToast(err.message, 'warning')
+      else {
+        console.error('Не удалось добавить участника в команду', err)
+        showToast('Не удалось добавить участника в команду', 'warning')
+      }
+    } finally {
+      setMemberBusy(false)
+    }
+  }
+
+  const removeMember = async (user: User) => {
+    if (reloadUsers === undefined || memberBusy) return
+    setMemberBusy(true)
+    try {
+      await api.patchUser(user.id, { team: null })
+      await reloadUsers()
+      showToast(`${user.fullName ?? user.email} убран из команды «${name}»`, 'info')
+    } catch (err) {
+      if (err instanceof api.ApiError) showToast(err.message, 'warning')
+      else {
+        console.error('Не удалось убрать участника из команды', err)
+        showToast('Не удалось убрать участника из команды', 'warning')
+      }
+    } finally {
+      setMemberBusy(false)
+    }
   }
 
   const remove = () => {
@@ -607,18 +663,85 @@ function DictItemModal({
         <AlertIcon size={15} />
         удаление убирает значение из списков и фильтров; инциденты сохранят его в истории
       </p>
+      {!isProduct && (
+        <>
+          <p className="psection" style={{ marginTop: 20 }}>Разработчики в команде</p>
+          {inTeam.length === 0 ? (
+            <p className="modal__info" style={{ marginBottom: 14 }}>
+              разработчиков с аккаунтом в команде пока нет — добавьте ниже
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
+              {inTeam.map(user => (
+                <div key={user.id} className="memberrow" style={{ justifyContent: 'space-between' }}>
+                  <span className="memberrow">
+                    <Avatar size="sm" tone="blue" name={user.fullName ?? user.email} />
+                    <span>
+                      {user.fullName ?? user.email}
+                      {user.itsmLogin !== null && user.itsmLogin !== '' && (
+                        <span className="table__muted" style={{ fontSize: 12 }}> · {user.itsmLogin}</span>
+                      )}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    className="iconbtn"
+                    aria-label={`Убрать ${user.fullName ?? user.email} из команды`}
+                    onClick={() => void removeMember(user)}
+                  >
+                    <TrashIcon size={15} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {candidates.length === 0 ? (
+            <p className="modal__info" style={{ marginBottom: 0 }}>все разработчики с аккаунтом уже в команде</p>
+          ) : (
+            <Field label="Добавить разработчика">
+              <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <Select value={addValue} options={candidateOptions} onChange={setAddId} />
+                </div>
+                <Button variant="secondary" disabled={memberBusy} onClick={() => void addMember()}>
+                  <PlusIcon size={15} />
+                  Добавить
+                </Button>
+              </div>
+            </Field>
+          )}
+        </>
+      )}
     </Modal>
   )
 }
 
 // ---------------- команды ----------------
 
+type TeamMemberRow =
+  | { kind: 'account'; user: User; load: number }
+  | { kind: 'executor'; name: string; load: number }
+
 export function AdminTeamsPage() {
   const { state, dispatch, showToast } = useApp()
+  const [users, setUsers] = useState<User[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [newName, setNewName] = useState('')
   const [manage, setManage] = useState<string | null>(null)
+
+  const reloadUsers = useCallback(async () => {
+    try {
+      setUsers(await api.fetchUsers())
+    } catch (err) {
+      console.error('Не удалось загрузить пользователей', err)
+      showToast('Не удалось загрузить список разработчиков', 'warning')
+    }
+  }, [showToast])
+
+  useEffect(() => {
+    void reloadUsers()
+  }, [reloadUsers])
 
   const teams = useMemo(
     () => (state.dictionaries?.assignedGroups ?? []).filter(t => t !== '' && t !== 'null'),
@@ -633,22 +756,56 @@ export function AdminTeamsPage() {
     if (selected !== null && !teams.includes(selected)) setSelected(null)
   }, [teams, selected])
 
+  const developers = useMemo(
+    () => users.filter(u => u.role === 'developer' && u.deletedAt === null),
+    [users],
+  )
+
   const teamStats = useMemo(() => {
     return teams.map(name => {
       const active = [...state.cards.values()].filter(c => c.isActive && c.assignedGroupName === name).length
-      const members = [...new Set([...state.cards.values()].filter(c => c.assignedGroupName === name && c.assignedEmployee).map(c => c.assignedEmployee as string))]
-      return { name, active, members }
+      const executors = [...new Set([...state.cards.values()].filter(c => c.assignedGroupName === name && c.assignedEmployee).map(c => c.assignedEmployee as string))]
+      const accounts = developers.filter(d => d.team === name)
+      const accountNames = new Set(accounts.map(d => d.fullName ?? d.email ?? ''))
+      const members = [...new Set([...executors.filter(n => !accountNames.has(n)), ...accounts.map(d => d.fullName ?? d.email ?? '')])]
+      return { name, active, members, executors, accounts }
     })
-  }, [teams, state.cards])
+  }, [teams, state.cards, developers])
 
-  const memberRows = useMemo(() => {
+  const memberRows = useMemo<TeamMemberRow[]>(() => {
     const team = teamStats.find(t => t.name === selected)
-    if (team === undefined) return []
-    return team.members.map(member => ({
-      name: member,
-      active: [...state.cards.values()].filter(c => c.isActive && c.assignedEmployee === member).length,
+    if (team === undefined || selected === null) return []
+    const all = [...state.cards.values()]
+    const rows: TeamMemberRow[] = team.accounts.map(user => ({
+      kind: 'account',
+      user,
+      load: all.filter(
+        c =>
+          c.isActive
+          && c.assignedGroupName === selected
+          && ((user.itsmLogin !== null && c.assignedEmployeeLogin === user.itsmLogin) || c.members.includes(user.id)),
+      ).length,
     }))
+    for (const name of team.executors) {
+      rows.push({ kind: 'executor', name, load: all.filter(c => c.isActive && c.assignedEmployee === name).length })
+    }
+    return rows
   }, [selected, teamStats, state.cards])
+
+  const removeMember = async (user: User) => {
+    if (selected === null) return
+    try {
+      await api.patchUser(user.id, { team: null })
+      await reloadUsers()
+      showToast(`${user.fullName ?? user.email} убран из команды «${selected}»`, 'info')
+    } catch (err) {
+      if (err instanceof api.ApiError) showToast(err.message, 'warning')
+      else {
+        console.error('Не удалось убрать участника из команды', err)
+        showToast('Не удалось убрать участника из команды', 'warning')
+      }
+    }
+  }
 
   const maxLoad = Math.max(1, ...teamStats.map(t => t.active))
   const developerCount = teamStats.reduce((sum, t) => sum + t.members.length, 0)
@@ -708,7 +865,8 @@ export function AdminTeamsPage() {
                 {team.members.length === 0 && <Avatar size="sm" tone="ghost" />}
               </span>
               <span style={{ marginLeft: 14 }}>
-                {team.members.length} исполнител{team.members.length === 1 ? 'ь' : team.members.length < 5 ? 'я' : 'ей'} · по данным инцидентов
+                {team.members.length} исполнител{team.members.length === 1 ? 'ь' : team.members.length < 5 ? 'я' : 'ей'}
+                {team.accounts.length > 0 ? ` · ${team.accounts.length} с аккаунтом` : ' · по данным инцидентов'}
               </span>
             </div>
             <div className="loadrow" style={{ marginTop: 12 }}>
@@ -732,7 +890,13 @@ export function AdminTeamsPage() {
         <h3>Состав команды {selected ?? ''}</h3>
         <Button
           variant="secondary"
-          onClick={() => showToast('Участники команды определяются по назначениям в инцидентах', 'info')}
+          onClick={() => {
+            if (selected === null) {
+              showToast('Сначала создайте команду', 'warning')
+              return
+            }
+            setManage(selected)
+          }}
         >
           <PlusIcon size={15} />
           Добавить участника
@@ -750,26 +914,57 @@ export function AdminTeamsPage() {
               </tr>
             </thead>
             <tbody>
-              {memberRows.map(row => (
-                <tr key={row.name}>
-                  <td>
-                    <span className="memberrow">
-                      <Avatar size="sm" tone="blue" name={row.name} />
-                      {row.name}
-                    </span>
-                  </td>
-                  <td className="table__muted">—</td>
-                  <td>
-                    Загрузка {row.active * 25}% · {row.active} инцидент{row.active === 1 ? '' : row.active < 5 ? 'а' : 'ов'}
-                  </td>
-                  <td />
-                </tr>
-              ))}
+              {memberRows.map(row =>
+                row.kind === 'account' ? (
+                  <tr key={`u-${row.user.id}`}>
+                    <td>
+                      <span className="memberrow">
+                        <Avatar size="sm" tone="blue" name={row.user.fullName ?? row.user.email} />
+                        <span>
+                          {row.user.fullName ?? row.user.email}
+                          <span className="table__muted" style={{ display: 'block', fontSize: 12 }}>{row.user.email}</span>
+                        </span>
+                      </span>
+                    </td>
+                    <td className="table__muted">—</td>
+                    <td>
+                      Загрузка {row.load * 25}% · {row.load} инцидент{row.load === 1 ? '' : row.load < 5 ? 'а' : 'ов'}
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="iconbtn"
+                        aria-label={`Убрать ${row.user.fullName ?? row.user.email} из команды`}
+                        onClick={() => void removeMember(row.user)}
+                      >
+                        <TrashIcon size={15} />
+                      </button>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={`e-${row.name}`}>
+                    <td>
+                      <span className="memberrow">
+                        <Avatar size="sm" tone="blue" name={row.name} />
+                        {row.name}
+                      </span>
+                    </td>
+                    <td className="table__muted">—</td>
+                    <td>
+                      Загрузка {row.load * 25}% · {row.load} инцидент{row.load === 1 ? '' : row.load < 5 ? 'а' : 'ов'}
+                    </td>
+                    <td />
+                  </tr>
+                ),
+              )}
             </tbody>
           </table>
         </div>
       ) : (
-        <EmptyState title="В команде нет исполнителей" note="Участники появятся, когда инциденты команды будут назначены исполнителям" />
+        <EmptyState
+          title="В команде нет исполнителей"
+          note="Добавьте разработчика через «Добавить участника» или назначьте исполнителей в инцидентах"
+        />
       )}
 
       {createOpen && (
@@ -809,7 +1004,15 @@ export function AdminTeamsPage() {
         </Modal>
       )}
 
-      {manage !== null && <DictItemModal field="assignedGroups" name={manage} onClose={() => setManage(null)} />}
+      {manage !== null && (
+        <DictItemModal
+          field="assignedGroups"
+          name={manage}
+          onClose={() => setManage(null)}
+          developers={developers}
+          reloadUsers={reloadUsers}
+        />
+      )}
     </>
   )
 }

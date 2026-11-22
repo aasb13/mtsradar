@@ -29,6 +29,7 @@ class UserUpdate(BaseModel):
     role: Role | None = None
     password: str | None = Field(None, min_length=8, max_length=72)
     itsmLogin: str | None = None
+    team: str | None = Field(None, max_length=200, description="команда (assignedGroupName) — для разработчиков")
 
 
 @router.get("")
@@ -66,6 +67,8 @@ async def update(user_id: str, body: UserUpdate, _: AdminUser) -> dict[str, Any]
         upd["passwordHash"] = hash_password(body.password)
     if "itsmLogin" in body.model_fields_set:
         upd["itsmLogin"] = body.itsmLogin
+    if "team" in body.model_fields_set:
+        upd["team"] = body.team
     if upd:
         res = await get_db().users.update_one({"_id": user_id, "deletedAt": None}, {"$set": upd})
         if res.matched_count == 0:

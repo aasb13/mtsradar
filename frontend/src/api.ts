@@ -485,7 +485,7 @@ export function createUser(body: { email: string; password: string; fullName: st
   return request<User>('/users', { method: 'POST', body })
 }
 
-export function patchUser(id: string, body: { role?: string; fullName?: string; itsmLogin?: string }): Promise<User> {
+export function patchUser(id: string, body: { role?: string; fullName?: string; itsmLogin?: string; team?: string | null }): Promise<User> {
   return request<User>(`/users/${encodeURIComponent(id)}`, { method: 'PATCH', body })
 }
 

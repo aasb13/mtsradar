@@ -741,6 +741,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
         }
         dispatch({ type: 'RENAME_DICT_ITEM', field, from, to })
+        if (field === 'assignedGroups') {
+          try {
+            const users = await api.fetchUsers()
+            for (const u of users) {
+              if (u.role === 'developer' && u.deletedAt === null && u.team === from) {
+                await api.patchUser(u.id, { team: to })
+              }
+            }
+          } catch (err) {
+            console.error('Не удалось перенести участников команды при переименовании', err)
+          }
+        }
         if (failed === 0) {
           showToast(`${noun} «${from}» переименован в «${to}»`, 'success')
         } else {
