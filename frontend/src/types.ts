@@ -350,6 +350,8 @@ export interface ToastItem {
   tone: 'info' | 'success' | 'warning' | 'critical'
   text: string
   createdAt: number
+  /** Момент начала исчезновения: тост доигрывает анимацию exit и ещё висит в списке. */
+  leavingAt?: number
   /** Инцидент, о котором сообщает уведомление: клик ведёт на канбан инцидентов. */
   incidentId?: string
 }

@@ -169,6 +169,7 @@ export type Action =
   | { type: 'SET_PENDING_REQUEST'; request: RegistrationRequest | null }
   | { type: 'ADD_TOAST'; toast: ToastItem }
   | { type: 'DISMISS_TOAST'; key: string }
+  | { type: 'REMOVE_TOAST'; key: string }
   | { type: 'OPEN_PANEL'; id: string | null }
   | { type: 'OPEN_ASSIGN'; id: string | null }
   | { type: 'OPEN_FREEZE'; id: string | null }
@@ -295,6 +296,12 @@ function reducer(state: State, action: Action): State {
     case 'ADD_TOAST':
       return toast(state, action.toast)
     case 'DISMISS_TOAST':
+      // не удаляем сразу: тост сначала доигрывает анимацию выхода, REMOVE_TOAST убирает его из DOM
+      return {
+        ...state,
+        toasts: state.toasts.map(t => (t.key === action.key && t.leavingAt === undefined ? { ...t, leavingAt: Date.now() } : t)),
+      }
+    case 'REMOVE_TOAST':
       return { ...state, toasts: state.toasts.filter(t => t.key !== action.key) }
     case 'OPEN_PANEL':
       return { ...state, panelId: action.id }

@@ -271,6 +271,18 @@ export function Modal({
   width?: number
 }) {
   const ref = useRef<HTMLDivElement>(null)
+  // пока модалка открыта, страница под ней не прокручивается; паддинг компенсирует исчезнувший скроллбар
+  useEffect(() => {
+    const scrollbar = window.innerWidth - document.documentElement.clientWidth
+    const prevOverflow = document.body.style.overflow
+    const prevPadding = document.body.style.paddingRight
+    document.body.style.overflow = 'hidden'
+    if (scrollbar > 0) document.body.style.paddingRight = `${scrollbar}px`
+    return () => {
+      document.body.style.overflow = prevOverflow
+      document.body.style.paddingRight = prevPadding
+    }
+  }, [])
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()

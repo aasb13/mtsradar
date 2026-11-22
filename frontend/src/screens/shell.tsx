@@ -303,13 +303,21 @@ export function Header() {
   )
 }
 
+// на 20 мс дольше длительности toast-out в styles.css, чтобы из DOM тост уходил уже после анимации
+const TOAST_EXIT_MS = 220
+
 export function ToastStack() {
   const { state, dispatch } = useApp()
   useEffect(() => {
     if (state.toasts.length === 0) return
-    const timers = state.toasts
-      .filter(t => t.tone !== 'critical')
-      .map(t => window.setTimeout(() => dispatch({ type: 'DISMISS_TOAST', key: t.key }), 6000))
+    const timers = state.toasts.flatMap(t => {
+      if (t.leavingAt !== undefined) {
+        const delay = Math.max(0, t.leavingAt + TOAST_EXIT_MS - Date.now())
+        return [window.setTimeout(() => dispatch({ type: 'REMOVE_TOAST', key: t.key }), delay)]
+      }
+      if (t.tone === 'critical') return []
+      return [window.setTimeout(() => dispatch({ type: 'DISMISS_TOAST', key: t.key }), 6000)]
+    })
     return () => {
       for (const id of timers) window.clearTimeout(id)
     }
@@ -328,7 +336,7 @@ export function ToastStack() {
         return (
           <div
             key={t.key}
-            className={`toast toast--${t.tone} ${clickable ? 'toast--link' : ''}`}
+            className={`toast toast--${t.tone} ${clickable ? 'toast--link' : ''} ${t.leavingAt !== undefined ? 'toast--leaving' : ''}`}
             onClick={clickable ? () => openIncident(t) : undefined}
           >
             <span className={`toast__icon toast__icon--${t.tone}`}>
