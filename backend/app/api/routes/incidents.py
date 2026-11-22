@@ -205,6 +205,7 @@ class IncidentPatch(BaseModel):
     priorityId: int | None = Field(None, ge=1, le=4)
     deadline: datetime | None = None
     assignedGroupName: str | None = Field(None, min_length=1)
+    productName: str | None = Field(None, min_length=1)
     assignedEmployee: str | None = None
     assignedEmployeeLogin: str | None = None
     header: str | None = Field(None, min_length=1)

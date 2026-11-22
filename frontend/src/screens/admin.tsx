@@ -6,9 +6,11 @@ import type { Card, Invite, RegistrationRequest, Role, User } from '../types'
 import { PRIORITY_SLA_HOURS, PRIORITIES, ROLE_LABELS } from '../types'
 import { FilterChipMenu, KpiRow, SLA_LABELS } from './kanban'
 import {
+  AlertIcon,
   Avatar,
   BoxIcon,
   Button,
+  DotsIcon,
   DownloadIcon,
   EmptyState,
   Field,
@@ -154,7 +156,7 @@ export function AdminIncidentsPage() {
       </div>
 
       {loading ? (
-        <p style={{ color: 'var(--text-2)', padding: 24 }}>Загрузка…</p>
+        <p className="loading-text" style={{ color: 'var(--text-2)', padding: 24 }}>Загрузка…</p>
       ) : items.length === 0 ? (
         <EmptyState title="Инцидентов нет" note="Все задачи обработаны или ещё не поступили" />
       ) : (
@@ -410,6 +412,7 @@ export function AdminProductsPage() {
   const { state, dispatch, showToast } = useApp()
   const [addOpen, setAddOpen] = useState(false)
   const [newName, setNewName] = useState('')
+  const [manage, setManage] = useState<string | null>(null)
 
   const products = useMemo(
     () => (state.dictionaries?.products ?? []).filter(p => p !== '' && p !== 'null').sort(),
@@ -465,6 +468,14 @@ export function AdminProductsPage() {
                 <span className="pcard__icon">
                   <BoxIcon size={22} />
                 </span>
+                <button
+                  type="button"
+                  className="iconbtn"
+                  aria-label={`Изменить продукт ${name}`}
+                  onClick={() => setManage(name)}
+                >
+                  <DotsIcon size={16} />
+                </button>
               </div>
               <p className="pcard__name">{name}</p>
               <p className="pcard__team">Инцидентов открыто: {info?.active ?? 0}</p>
@@ -524,7 +535,84 @@ export function AdminProductsPage() {
           </Field>
         </Modal>
       )}
+
+      {manage !== null && <DictItemModal field="products" name={manage} onClose={() => setManage(null)} />}
     </>
+  )
+}
+
+// ---------------- изменение и удаление продукта/команды ----------------
+
+function DictItemModal({
+  field,
+  name,
+  onClose,
+}: {
+  field: 'products' | 'assignedGroups'
+  name: string
+  onClose: () => void
+}) {
+  const { state, dispatch, doRenameDictItem, showToast } = useApp()
+  const [value, setValue] = useState(name)
+  const [busy, setBusy] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const isProduct = field === 'products'
+  const trimmed = value.trim()
+
+  const openCount = useMemo(
+    () =>
+      [...state.cards.values()].filter(c => c.isActive && (isProduct ? c.productName : c.assignedGroupName) === name)
+        .length,
+    [state.cards, isProduct, name],
+  )
+
+  const rename = async () => {
+    if (busy || trimmed === '' || trimmed === name) return
+    setBusy(true)
+    const ok = await doRenameDictItem(field, name, trimmed)
+    setBusy(false)
+    if (ok) onClose()
+  }
+
+  const remove = () => {
+    if (!confirming) {
+      setConfirming(true)
+      return
+    }
+    dispatch({ type: 'REMOVE_DICT_ITEM', field, name })
+    showToast(isProduct ? `Продукт «${name}» удалён из справочника` : `Команда «${name}» удалена из справочника`, 'info')
+    onClose()
+  }
+
+  return (
+    <Modal
+      title={isProduct ? `Продукт «${name}»` : `Команда «${name}»`}
+      subtitle={`Открытых инцидентов: ${openCount}`}
+      onClose={onClose}
+      width={480}
+      footer={
+        <>
+          <Button variant="danger" onClick={remove}>
+            {confirming ? 'Подтвердить удаление' : 'Удалить'}
+          </Button>
+          <span className="spacer" />
+          <Button variant="secondary" onClick={onClose}>
+            Отмена
+          </Button>
+          <Button variant="primary" disabled={busy || trimmed === '' || trimmed === name} onClick={() => void rename()}>
+            Сохранить
+          </Button>
+        </>
+      }
+    >
+      <Field label="Новое название" hint="Инциденты с этим значением обновятся автоматически">
+        <Input value={value} onChange={e => setValue(e.target.value)} />
+      </Field>
+      <p className="modal__info">
+        <AlertIcon size={15} />
+        удаление убирает значение из списков и фильтров; инциденты сохранят его в истории
+      </p>
+    </Modal>
   )
 }
 
@@ -535,6 +623,7 @@ export function AdminTeamsPage() {
   const [selected, setSelected] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [newName, setNewName] = useState('')
+  const [manage, setManage] = useState<string | null>(null)
 
   const teams = useMemo(
     () => (state.dictionaries?.assignedGroups ?? []).filter(t => t !== '' && t !== 'null'),
@@ -543,6 +632,10 @@ export function AdminTeamsPage() {
 
   useEffect(() => {
     if (selected === null && teams.length > 0) setSelected(teams[0])
+  }, [teams, selected])
+
+  useEffect(() => {
+    if (selected !== null && !teams.includes(selected)) setSelected(null)
   }, [teams, selected])
 
   const teamStats = useMemo(() => {
@@ -591,21 +684,26 @@ export function AdminTeamsPage() {
           >
             <div className="teamcard__head">
               <span className="teamcard__name">{team.name}</span>
-              {selected === team.name ? (
-                <span className="teamcard__check">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="m5 12.5 4.5 4.5L19 7.5" />
-                  </svg>
-                </span>
-              ) : (
-                <span style={{ color: 'var(--text-3)' }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <circle cx="5" cy="12" r="1.6" />
-                    <circle cx="12" cy="12" r="1.6" />
-                    <circle cx="19" cy="12" r="1.6" />
-                  </svg>
-                </span>
-              )}
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                {selected === team.name && (
+                  <span className="teamcard__check">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="m5 12.5 4.5 4.5L19 7.5" />
+                    </svg>
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="iconbtn"
+                  aria-label={`Изменить команду ${team.name}`}
+                  onClick={e => {
+                    e.stopPropagation()
+                    setManage(team.name)
+                  }}
+                >
+                  <DotsIcon size={16} />
+                </button>
+              </span>
             </div>
             <div className="teamcard__people" style={{ marginTop: 16 }}>
               <span className="avatar-stack">
@@ -715,6 +813,8 @@ export function AdminTeamsPage() {
           </Field>
         </Modal>
       )}
+
+      {manage !== null && <DictItemModal field="assignedGroups" name={manage} onClose={() => setManage(null)} />}
     </>
   )
 }
@@ -832,7 +932,7 @@ export function AdminUsersPage() {
       </div>
 
       {loading ? (
-        <p style={{ color: 'var(--text-2)', padding: 24 }}>Загрузка…</p>
+        <p className="loading-text" style={{ color: 'var(--text-2)', padding: 24 }}>Загрузка…</p>
       ) : tab === 'pending' && requests.length === 0 ? (
         <EmptyState title="Заявок на регистрацию нет" note="Новые заявки появятся здесь сразу после отправки формы регистрации" />
       ) : (
@@ -1264,29 +1364,29 @@ export function AdminDonePage() {
       <div className="kpis">
         <div className="kpi">
           <p className="kpi__label">Закрыто за неделю</p>
-          <p className="kpi__value">{closedWeek}</p>
+          <p className="kpi__value" key={closedWeek}>{closedWeek}</p>
           <p className="kpi__sub">всего закрыто: {items.length}</p>
         </div>
         <div className="kpi">
           <p className="kpi__label">Среднее время</p>
-          <p className="kpi__value">{formatDurationWords(avg === null ? null : avg * 60)}</p>
+          <p className="kpi__value" key={formatDurationWords(avg === null ? null : avg * 60)}>{formatDurationWords(avg === null ? null : avg * 60)}</p>
           <p className="kpi__sub">от создания до закрытия</p>
         </div>
         <div className="kpi">
           <p className="kpi__label">В срок SLA</p>
-          <p className="kpi__value">{metRate === null ? '—' : `${metRate}%`}</p>
+          <p className="kpi__value" key={metRate}>{metRate === null ? '—' : `${metRate}%`}</p>
           <p className="kpi__sub">закрыты до дедлайна</p>
         </div>
         <div className="kpi">
           <p className="kpi__label">С просрочкой</p>
-          <p className="kpi__value kpi__value--red">{overdue.length}</p>
+          <p className="kpi__value kpi__value--red" key={overdue.length}>{overdue.length}</p>
           <p className="kpi__sub">{overdue.length > 0 ? overdue[0].id : '—'}</p>
         </div>
       </div>
 
       <div style={{ height: 28 }} />
       {loading ? (
-        <p style={{ color: 'var(--text-2)', padding: 24 }}>Загрузка…</p>
+        <p className="loading-text" style={{ color: 'var(--text-2)', padding: 24 }}>Загрузка…</p>
       ) : items.length === 0 ? (
         <EmptyState title="Пока нет закрытых инцидентов" note="Закрытые появятся после проверки исправлений" />
       ) : (

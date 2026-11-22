@@ -250,6 +250,7 @@ export function patchIncident(
     priorityId?: number
     deadline?: string
     assignedGroupName?: string
+    productName?: string
     assignedEmployee?: string
     header?: string
     expectedVersion?: number

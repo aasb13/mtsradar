@@ -3,7 +3,7 @@ import type { Dispatch, ReactNode } from 'react'
 import * as api from './api'
 import { ApiError, clearTokens, getAccessToken, getRefreshToken, storeTokens } from './api'
 import { beepCritical } from './beep'
-import { FEED_TEXT } from './format'
+import { FEED_TEXT, pluralize } from './format'
 import { navigate } from './router'
 import { connectSocket } from './ws'
 import type {
@@ -67,6 +67,10 @@ const THEME_KEY = 'radar-theme'
 // поэтому добавленные до первого инцидента продукты/команды живут здесь
 const LOCAL_PRODUCTS_KEY = 'radar-local-products'
 const LOCAL_TEAMS_KEY = 'radar-local-teams'
+// удалённые из справочника значения: сервер выводит их из инцидентов заново при каждом
+// запросе, поэтому скрытие живёт тоже в localStorage, а не в данных инцидентов
+const LOCAL_REMOVED_PRODUCTS_KEY = 'radar-removed-products'
+const LOCAL_REMOVED_TEAMS_KEY = 'radar-removed-teams'
 
 function localList(key: string): string[] {
   try {
@@ -78,10 +82,14 @@ function localList(key: string): string[] {
 }
 
 function dictWithLocalItems(dictionaries: Dictionaries): Dictionaries {
+  const removedProducts = localList(LOCAL_REMOVED_PRODUCTS_KEY)
+  const removedTeams = localList(LOCAL_REMOVED_TEAMS_KEY)
   return {
     ...dictionaries,
-    products: [...new Set([...dictionaries.products, ...localList(LOCAL_PRODUCTS_KEY)])].sort(),
-    assignedGroups: [...new Set([...dictionaries.assignedGroups, ...localList(LOCAL_TEAMS_KEY)])].sort(),
+    products: [...new Set([...dictionaries.products.filter(x => !removedProducts.includes(x)), ...localList(LOCAL_PRODUCTS_KEY)])].sort(),
+    assignedGroups: [
+      ...new Set([...dictionaries.assignedGroups.filter(x => !removedTeams.includes(x)), ...localList(LOCAL_TEAMS_KEY)]),
+    ].sort(),
   }
 }
 
@@ -132,6 +140,8 @@ export type Action =
   | { type: 'AUTH_LOGOUT' }
   | { type: 'BOOT_OK'; cards: Card[]; dashboard: DashboardResponse; dictionaries: Dictionaries }
   | { type: 'ADD_DICT_ITEMS'; field: 'products' | 'assignedGroups'; items: string[] }
+  | { type: 'RENAME_DICT_ITEM'; field: 'products' | 'assignedGroups'; from: string; to: string }
+  | { type: 'REMOVE_DICT_ITEM'; field: 'products' | 'assignedGroups'; name: string }
   | { type: 'BOOT_FAIL'; message: string }
   | { type: 'UPSERT_CARDS'; cards: Card[] }
   | { type: 'REMOVE_CARD'; id: string }
@@ -199,6 +209,38 @@ function reducer(state: State, action: Action): State {
       if (state.dictionaries === null) return state
       const merged = [...new Set([...state.dictionaries[action.field], ...values])].sort()
       return { ...state, dictionaries: { ...state.dictionaries, [action.field]: merged } }
+    }
+    case 'RENAME_DICT_ITEM': {
+      // инциденты переименовывает запрос (doRenameDictItem); здесь — локальные записи и текущий список
+      const key = action.field === 'products' ? LOCAL_PRODUCTS_KEY : LOCAL_TEAMS_KEY
+      const list = localList(key)
+      if (list.includes(action.from)) {
+        try {
+          window.localStorage.setItem(key, JSON.stringify(list.map(x => (x === action.from ? action.to : x))))
+        } catch (err) {
+          console.error('Не удалось сохранить список', err)
+        }
+      }
+      if (state.dictionaries === null) return state
+      const renamed = [...new Set(state.dictionaries[action.field].map(x => (x === action.from ? action.to : x)))].sort()
+      return { ...state, dictionaries: { ...state.dictionaries, [action.field]: renamed } }
+    }
+    case 'REMOVE_DICT_ITEM': {
+      const key = action.field === 'products' ? LOCAL_PRODUCTS_KEY : LOCAL_TEAMS_KEY
+      const removedKey = action.field === 'products' ? LOCAL_REMOVED_PRODUCTS_KEY : LOCAL_REMOVED_TEAMS_KEY
+      try {
+        window.localStorage.setItem(key, JSON.stringify(localList(key).filter(x => x !== action.name)))
+        window.localStorage.setItem(removedKey, JSON.stringify([...new Set([...localList(removedKey), action.name])]))
+      } catch (err) {
+        console.error('Не удалось сохранить список', err)
+      }
+      const filters =
+        action.field === 'products'
+          ? { ...state.filters, product: state.filters.product === action.name ? null : state.filters.product }
+          : { ...state.filters, team: state.filters.team === action.name ? null : state.filters.team }
+      if (state.dictionaries === null) return { ...state, filters }
+      const remaining = state.dictionaries[action.field].filter(x => x !== action.name)
+      return { ...state, filters, dictionaries: { ...state.dictionaries, [action.field]: remaining } }
     }
     case 'BOOT_FAIL':
       return { ...state, bootError: action.message }
@@ -284,6 +326,8 @@ interface AppContextValue {
   doAssign: (card: Card, team: string, executorUserId: string | null) => Promise<boolean>
   doFreeze: (id: string, body: FreezeRequest) => Promise<boolean>
   doUnfreeze: (id: string) => Promise<boolean>
+  /** Переименование продукта/команды: все инциденты со старым значением обновляются запросами. */
+  doRenameDictItem: (field: 'products' | 'assignedGroups', from: string, to: string) => Promise<boolean>
   showToast: (text: string, tone?: ToastItem['tone']) => void
 }
 
@@ -671,6 +715,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [scheduleDashboardRefresh, showToast],
   )
 
+  const doRenameDictItem = useCallback(
+    async (field: 'products' | 'assignedGroups', from: string, to: string) => {
+      const noun = field === 'products' ? 'Продукт' : 'Команда'
+      try {
+        const res = await api.fetchIncidents(field === 'products' ? { productName: from, perPage: 500 } : { assignedGroupName: from, perPage: 500 })
+        let failed = 0
+        for (const card of res.items) {
+          try {
+            const patch = field === 'products' ? { productName: to } : { assignedGroupName: to }
+            await api.patchIncident(card.id, patch)
+          } catch (err) {
+            console.error('Не удалось обновить инцидент при переименовании', err)
+            failed += 1
+          }
+        }
+        dispatch({ type: 'RENAME_DICT_ITEM', field, from, to })
+        if (failed === 0) {
+          showToast(`${noun} «${from}» переименован в «${to}»`, 'success')
+        } else {
+          showToast(`${noun} переименован, но ${failed} ${pluralize(failed, 'инцидент', 'инцидента', 'инцидентов')} не обновлено`, 'warning')
+        }
+        return failed === 0
+      } catch (err) {
+        console.error('Ошибка переименования', err)
+        showToast('Не удалось переименовать: сервер недоступен', 'critical')
+        return false
+      }
+    },
+    [showToast],
+  )
+
   // звук на новый критический (карточка стала критической и не была)
   const criticalIdsRef = useRef<Set<string>>(new Set())
   useEffect(() => {
@@ -709,9 +784,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       doAssign,
       doFreeze,
       doUnfreeze,
+      doRenameDictItem,
       showToast,
     }),
-    [state, login, loginWithPair, logout, register, refreshDashboard, refreshBoard, refreshStats, doTransition, doAck, doAssign, doFreeze, doUnfreeze, showToast],
+    [state, login, loginWithPair, logout, register, refreshDashboard, refreshBoard, refreshStats, doTransition, doAck, doAssign, doFreeze, doUnfreeze, doRenameDictItem, showToast],
   )
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>
