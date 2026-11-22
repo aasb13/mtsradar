@@ -5,6 +5,7 @@
   incident_events история изменений (путь инцидента)
   comments        заметки координаторов
   users           пользователи нашей системы (координаторы, админы)
+  teams           команды, созданные администратором до появления инцидентов ({_id, name, createdAt, createdBy, deletedAt})
   registration_requests заявки на регистрацию (одобряет админ — тогда создаётся пользователь)
   notifications   центр уведомлений (колокольчик)
   team_descriptions ИИ-описания команд для раздела статистика ({_id: имя команды, text, model, updatedAt})
@@ -54,6 +55,8 @@ async def ensure_indexes() -> None:
     await db.comments.create_index([("incidentId", ASCENDING), ("createdAt", ASCENDING)])
     await db.users.create_index("email", unique=True)
     await db.users.create_index("itsmLogin")
+    # одно живое имя команды; удалённое имя можно занять заново
+    await db.teams.create_index("name", unique=True, partialFilterExpression={"deletedAt": None})
     # одна нерассмотренная заявка на почту; отклонённую можно подать заново
     await db.registration_requests.create_index("email", unique=True, partialFilterExpression={"status": "pending"})
     await db.incidents.create_index("data.assignedEmployeeLogin")

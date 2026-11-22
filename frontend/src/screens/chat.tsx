@@ -13,6 +13,7 @@ import {
   DownloadIcon,
   EmptyState,
   FileIcon,
+  Modal,
   PlusIcon,
   SendIcon,
   SparkIcon,
@@ -40,6 +41,8 @@ export function ChatPage() {
   const [pending, setPending] = useState<ChatAttachment[]>([])
   const [replyTo, setReplyTo] = useState<ChatReply | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [deleting, setDeleting] = useState<ChatSession | null>(null)
+  const [deletingBusy, setDeletingBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const draftRef = useRef<{ incidentId: string; text: string } | null>(null)
@@ -227,14 +230,20 @@ export function ChatPage() {
     navigate('/chat', true)
   }
 
-  const removeSession = async (id: string) => {
+  const removeSession = async () => {
+    if (deleting === null || deletingBusy) return
+    const id = deleting.id
+    setDeletingBusy(true)
     try {
       await api.deleteChatSession(id)
       setSessions(prev => prev.filter(s => s.id !== id))
       if (activeId === id) newSession()
+      setDeleting(null)
     } catch (err) {
       console.error('Не удалось удалить сессию', err)
       showToast('Не удалось удалить сессию', 'warning')
+    } finally {
+      setDeletingBusy(false)
     }
   }
 
@@ -329,7 +338,7 @@ export function ChatPage() {
                 title="Удалить сессию"
                 onClick={e => {
                   e.stopPropagation()
-                  void removeSession(s.id)
+                  setDeleting(s)
                 }}
               >
                 <TrashIcon size={14} />
@@ -470,6 +479,28 @@ export function ChatPage() {
           </div>
         </div>
       </section>
+      {deleting !== null && (
+        <Modal
+          title="Удалить чат?"
+          onClose={() => setDeleting(null)}
+          width={440}
+          footer={
+            <>
+              <span className="spacer" />
+              <Button variant="secondary" onClick={() => setDeleting(null)}>
+                Отмена
+              </Button>
+              <Button variant="danger" disabled={deletingBusy} onClick={() => void removeSession()}>
+                Удалить
+              </Button>
+            </>
+          }
+        >
+          <p style={{ fontSize: 14, color: 'var(--text-2)' }}>
+            Беседа «{deleting.title}» и все её сообщения будут удалены безвозвратно.
+          </p>
+        </Modal>
+      )}
     </div>
   )
 }

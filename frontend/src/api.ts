@@ -548,6 +548,20 @@ export function fetchDictionaries(): Promise<Dictionaries> {
   return request<Dictionaries>('/dictionaries')
 }
 
+// ---------------- команды администратора ----------------
+
+export function createTeam(name: string): Promise<void> {
+  return request<void>('/teams', { method: 'POST', body: { name } })
+}
+
+export function renameTeam(name: string, newName: string): Promise<void> {
+  return request<void>(`/teams/${encodeURIComponent(name)}`, { method: 'PATCH', body: { name: newName } })
+}
+
+export function deleteTeam(name: string): Promise<void> {
+  return request<void>(`/teams/${encodeURIComponent(name)}`, { method: 'DELETE' })
+}
+
 export function fetchStats(): Promise<StatsResponse> {
   return request<StatsResponse>('/stats')
 }

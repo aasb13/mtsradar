@@ -20,6 +20,11 @@ async def dictionaries(_: StaffUser) -> dict[str, Any]:
     s = get_settings()
     db = get_db()
     alive = {"meta.deletedAt": None}
+    # команды администраторов живут в коллекции teams; удаленные исключаем
+    # из справочника, даже если инциденты ещё ссылаются на них
+    team_docs = [t async for t in db.teams.find({}, {"name": 1, "deletedAt": 1})]
+    custom_teams = sorted(t["name"] for t in team_docs if t.get("deletedAt") is None)
+    deleted_teams = {t["name"] for t in team_docs if t.get("deletedAt") is not None}
     return {
         "states": [
             {
@@ -38,7 +43,10 @@ async def dictionaries(_: StaffUser) -> dict[str, Any]:
         "criticalPriorityId": s.critical_priority_id,
         # фронт красит BigDad в красный, если ИИ не настроен (LLM_API_BASE/LLM_MODEL)
         "aiEnabled": bool(s.llm_api_base and s.llm_model),
-        "assignedGroups": sorted(x for x in await db.incidents.distinct("data.assignedGroupName", alive) if x),
+        "assignedGroups": sorted(
+            ({x for x in await db.incidents.distinct("data.assignedGroupName", alive) if x} | set(custom_teams)) - deleted_teams
+        ),
+        "customTeams": custom_teams,
         "products": sorted(x for x in await db.incidents.distinct("data.productName", alive) if x),
         "serviceTypes": sorted(x for x in await db.incidents.distinct("data.serviceType", alive) if x),
         "receivingChannels": sorted(x for x in await db.incidents.distinct("data.receivingChannel", alive) if x),

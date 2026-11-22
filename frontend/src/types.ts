@@ -263,6 +263,8 @@ export interface Dictionaries {
   criticalPriorityId: number
   aiEnabled: boolean
   assignedGroups: string[]
+  /** команды, созданные администратором и живущие в базе (в отличие от выведенных из инцидентов) */
+  customTeams: string[]
   products: string[]
   serviceTypes: string[]
   receivingChannels: string[]

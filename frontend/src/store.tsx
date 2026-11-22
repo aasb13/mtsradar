@@ -149,7 +149,9 @@ export type Action =
   | { type: 'AUTH_CHECKED' }
   | { type: 'AUTH_LOGOUT' }
   | { type: 'BOOT_OK'; cards: Card[]; dashboard: DashboardResponse; dictionaries: Dictionaries }
+  | { type: 'SET_DICTIONARIES'; dictionaries: Dictionaries }
   | { type: 'ADD_DICT_ITEMS'; field: 'products' | 'assignedGroups'; items: string[] }
+  | { type: 'RESTORE_DICT_ITEM'; field: 'products' | 'assignedGroups'; name: string }
   | { type: 'RENAME_DICT_ITEM'; field: 'products' | 'assignedGroups'; from: string; to: string }
   | { type: 'REMOVE_DICT_ITEM'; field: 'products' | 'assignedGroups'; name: string }
   | { type: 'BOOT_FAIL'; message: string }
@@ -209,6 +211,8 @@ function reducer(state: State, action: Action): State {
         bootError: null,
       }
     }
+    case 'SET_DICTIONARIES':
+      return { ...state, dictionaries: dictWithLocalItems(action.dictionaries) }
     case 'ADD_DICT_ITEMS': {
       const key = action.field === 'products' ? LOCAL_PRODUCTS_KEY : LOCAL_TEAMS_KEY
       const values = action.items.filter(x => x !== '' && x !== 'null')
@@ -220,6 +224,19 @@ function reducer(state: State, action: Action): State {
       if (state.dictionaries === null) return state
       const merged = [...new Set([...state.dictionaries[action.field], ...values])].sort()
       return { ...state, dictionaries: { ...state.dictionaries, [action.field]: merged } }
+    }
+    case 'RESTORE_DICT_ITEM': {
+      // значение снова есть на сервере (команду создали заново после удаления):
+      // убираем его из локального списка скрытых, чтобы оно показывалось и здесь
+      const removedKey = action.field === 'products' ? LOCAL_REMOVED_PRODUCTS_KEY : LOCAL_REMOVED_TEAMS_KEY
+      try {
+        window.localStorage.setItem(removedKey, JSON.stringify(localList(removedKey).filter(x => x !== action.name)))
+      } catch (err) {
+        console.error('Не удалось сохранить список', err)
+      }
+      if (state.dictionaries === null) return state
+      const restored = [...new Set([...state.dictionaries[action.field], action.name])].sort()
+      return { ...state, dictionaries: { ...state.dictionaries, [action.field]: restored } }
     }
     case 'RENAME_DICT_ITEM': {
       // инциденты переименовывает запрос (doRenameDictItem); здесь — локальные записи и текущий список
@@ -359,6 +376,7 @@ interface AppContextValue {
   refreshDashboard: () => Promise<void>
   refreshBoard: () => Promise<void>
   refreshStats: () => Promise<void>
+  refreshDictionaries: () => Promise<void>
   doTransition: (card: Card, toStateId: number, extra?: { stateReason?: string; solution?: string; comment?: string }) => Promise<boolean>
   doAck: (id: string) => Promise<void>
   doAssign: (card: Card, team: string, executorUserId: string | null) => Promise<boolean>
@@ -431,6 +449,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       dispatch({ type: 'UPSERT_CARDS', cards })
     } catch (err) {
       console.error('Не удалось обновить доску', err)
+    }
+  }, [])
+
+  const refreshDictionaries = useCallback(async () => {
+    try {
+      dispatch({ type: 'SET_DICTIONARIES', dictionaries: await api.fetchDictionaries() })
+    } catch (err) {
+      console.error('Не удалось обновить справочники', err)
     }
   }, [])
 
@@ -788,6 +814,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const doRenameDictItem = useCallback(
     async (field: 'products' | 'assignedGroups', from: string, to: string) => {
       const noun = field === 'products' ? 'Продукт' : 'Команда'
+      // команда, созданная администратором, живёт в базе — переименовываем её документ,
+      // иначе после перезагрузки вернулось бы старое название
+      if (field === 'assignedGroups' && (stateRef.current.dictionaries?.customTeams ?? []).includes(from)) {
+        try {
+          await api.renameTeam(from, to)
+          void refreshDictionaries()
+        } catch (err) {
+          if (err instanceof ApiError) showToast(err.message, 'warning')
+          else {
+            console.error('Ошибка переименования команды', err)
+            showToast('Не удалось переименовать: сервер недоступен', 'critical')
+          }
+          return false
+        }
+      }
       try {
         const res = await api.fetchIncidents(field === 'products' ? { productName: from, perPage: 500 } : { assignedGroupName: from, perPage: 500 })
         let failed = 0
