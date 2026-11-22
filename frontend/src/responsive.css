@@ -1,0 +1,682 @@
+/* ==========================================================================
+   МТС Радар — адаптивность (планшеты и телефоны).
+   Файл подключается после styles.css и переопределяет десктопные правила.
+   ========================================================================== */
+
+/* ---------- базовые классы, вынесенные из инлайн-стилей ---------- */
+
+.searchinput {
+  width: 280px;
+  height: 40px;
+}
+
+.bell-menu {
+  max-width: calc(100vw - 24px);
+}
+
+.bell-menu--avatar {
+  width: 300px;
+}
+
+.commentform {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: -10px 0 20px;
+}
+
+.stats-teams-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 16px;
+}
+
+.stats-teams-head > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.pagehead__actions {
+  flex-wrap: wrap;
+}
+
+.nav {
+  min-width: 0;
+}
+
+.tablecard {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.history__head {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* длинные ссылки/идентификаторы не должны распирать контейнеры */
+.psection__text,
+.history__text,
+.notif__body,
+.assignnote,
+.executor__score-reason,
+.bigdad__text,
+.icard__title,
+.acard__title,
+.pcard__alert {
+  overflow-wrap: anywhere;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+button,
+.nav__link,
+.fchip,
+.icard,
+.acard {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ---------- планшеты ---------- */
+
+@media (max-width: 1100px) {
+  .page {
+    padding: 0 24px 48px;
+  }
+
+  .header {
+    padding: 0 24px;
+    gap: 20px;
+  }
+
+  /* Меню не переносится на вторую строку, а прокручивается */
+  .nav {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .pagehead {
+    padding: 30px 0 22px;
+  }
+
+  .panel {
+    width: 100%;
+  }
+
+  .overlay .modal {
+    margin: 4vh 20px;
+  }
+}
+
+/* ---------- небольшие планшеты / крупные телефоны ---------- */
+
+@media (max-width: 900px) {
+  :root {
+    --header-h: 116px;
+  }
+
+  /* Шапка в две строки: логотип и действия, ниже — прокручиваемое меню */
+  .header {
+    height: auto;
+    min-height: var(--header-h);
+    flex-wrap: wrap;
+    align-content: center;
+    padding: 10px 16px;
+    gap: 8px 12px;
+  }
+
+  .logo__box {
+    width: 76px;
+    height: 38px;
+    padding: 4px 6px;
+  }
+
+  .logo__mts {
+    font-size: 12px;
+  }
+
+  .logo__radar {
+    font-size: 9px;
+  }
+
+  .header__right {
+    margin-left: auto;
+    gap: 8px;
+  }
+
+  .nav {
+    order: 3;
+    flex: 1 0 100%;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    gap: 20px;
+    padding: 2px 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav__link {
+    font-size: 12px;
+    padding: 8px 0;
+  }
+
+  /* У разработчика и тестировщика меню пустое — не резервируем под него строку */
+  .nav:empty {
+    display: none;
+  }
+
+  .header:has(.nav:empty) {
+    --header-h: 68px;
+    min-height: 68px;
+  }
+
+  .headerbtn {
+    height: 38px;
+    padding: 0 12px;
+  }
+
+  .headerbtn__label {
+    display: none;
+  }
+
+  /* Выпадающие меню на всю ширину экрана */
+  .bell-menu {
+    position: fixed;
+    top: calc(var(--header-h) + 6px);
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: none;
+    max-height: calc(100vh - var(--header-h) - 24px);
+  }
+
+  .bell-menu--avatar {
+    width: auto;
+  }
+
+  /* Экран входа — только форма */
+  .auth {
+    grid-template-columns: 1fr;
+  }
+
+  .auth__left {
+    display: none;
+  }
+
+  .auth__right {
+    min-height: 100vh;
+    padding: 32px 20px 40px;
+  }
+
+  .auth__form h1 {
+    font-size: 28px;
+  }
+
+  .board,
+  .levels {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ---------- телефоны ---------- */
+
+@media (max-width: 768px) {
+  .page {
+    padding: 0 16px calc(40px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* 16px не даёт iOS Safari зумить страницу при фокусе на поле */
+  .input,
+  .select select {
+    font-size: 16px;
+  }
+
+  .pagehead {
+    padding: 22px 0 16px;
+    gap: 12px;
+  }
+
+  .pagehead h1 {
+    font-size: 24px;
+  }
+
+  .pagehead__sub {
+    font-size: 13px;
+  }
+
+  .pagehead__actions {
+    width: 100%;
+  }
+
+  .pagehead__actions .btn {
+    flex: 1 1 auto;
+  }
+
+  .kpis {
+    gap: 12px;
+  }
+
+  .kpi {
+    padding: 14px 16px 12px;
+    border-radius: 10px;
+  }
+
+  .kpi__value {
+    font-size: 26px;
+  }
+
+  .toolrow {
+    margin: 18px 0 16px;
+    gap: 10px;
+  }
+
+  .tabs {
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tabs__tab {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  .fchips {
+    gap: 8px;
+  }
+
+  .fchip {
+    height: 36px;
+    padding: 0 10px 0 12px;
+    font-size: 13px;
+  }
+
+  .fchip-menu {
+    min-width: 190px;
+    max-width: calc(100vw - 32px);
+  }
+
+  /* Сетки — в одну колонку */
+  .board,
+  .levels,
+  .cardsgrid,
+  .teamgrid,
+  .statsgrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .board {
+    gap: 14px;
+  }
+
+  .column {
+    min-height: 0;
+    padding: 12px;
+  }
+
+  .lvl {
+    padding: 10px;
+  }
+
+  .critbanner {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 16px;
+  }
+
+  .critbanner__actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .critbanner__actions .btn {
+    flex: 1 1 auto;
+  }
+
+  /* Таблицы прокручиваются по горизонтали, а не сжимаются */
+  .table {
+    min-width: 680px;
+  }
+
+  .table th,
+  .table td {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+
+  .table th {
+    font-size: 12px;
+  }
+
+  .sectiontitle {
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 24px 0 12px;
+  }
+
+  .sectiontitle .btn {
+    flex: 1 1 auto;
+  }
+
+  .chartcard,
+  .statcard {
+    padding: 16px;
+  }
+
+  .chartcard__head {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .legend {
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 12px;
+  }
+
+  .split {
+    gap: 16px;
+  }
+
+  .detailcard {
+    padding: 16px;
+  }
+
+  .detailcard h2 {
+    font-size: 20px !important;
+  }
+
+  .detailcard .pgrid {
+    grid-template-columns: 1fr;
+  }
+
+  .toasts {
+    left: 12px;
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    width: auto;
+  }
+
+  /* Модальные окна почти на весь экран */
+  .overlay .modal {
+    max-width: calc(100vw - 16px) !important;
+    max-height: calc(100vh - 16px);
+    margin: 8px;
+    border-radius: 14px;
+  }
+
+  .modal__head {
+    padding: 18px 16px 0;
+  }
+
+  .modal__body {
+    padding: 16px;
+  }
+
+  .modal__foot {
+    padding: 8px 16px 16px;
+  }
+
+  .modal__title {
+    font-size: 19px;
+  }
+
+  .modal--center .modal__head {
+    padding-top: 28px;
+  }
+
+  .modal--center .modal__body {
+    padding: 12px 20px 8px;
+  }
+
+  .modal--center .modal__foot {
+    padding: 12px 20px 24px;
+  }
+
+  /* Боковая панель инцидента — на весь экран */
+  .panel {
+    width: 100%;
+    max-width: 100%;
+    padding: 16px 16px 40px;
+  }
+
+  .panel h2 {
+    font-size: 20px;
+    margin: 18px 0 14px;
+  }
+
+  .panel__top {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .slabox {
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 14px 16px;
+  }
+
+  .slabox__time {
+    font-size: 26px;
+  }
+
+  .slabox__right {
+    flex-basis: 100%;
+    margin-left: 0;
+    text-align: left;
+  }
+
+  .panel__actions {
+    gap: 8px;
+    margin: 16px 0 20px;
+  }
+
+  .panel__actions .spacer {
+    flex-basis: 100%;
+    height: 0;
+  }
+
+  .pgrid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .commentform {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .commentform .btn {
+    width: 100%;
+  }
+
+  .formrow {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .sevswitch {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .teamcards {
+    grid-template-columns: 1fr;
+  }
+
+  .executor {
+    flex-wrap: wrap;
+    gap: 10px 14px;
+  }
+
+  .executor__load {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .executor__score {
+    min-width: 0;
+    margin-left: 0;
+    text-align: left;
+  }
+
+  .filegrid {
+    grid-template-columns: 1fr;
+  }
+
+  .dropzone {
+    padding: 18px 14px;
+  }
+
+  .bigdad__head {
+    flex-wrap: wrap;
+  }
+
+  .bigdad__refresh {
+    margin-left: auto;
+  }
+
+  .slabar-row {
+    flex-wrap: wrap;
+  }
+
+  .slabar-row .loadbar {
+    flex-basis: 100%;
+    order: 3;
+  }
+
+  .slabar-row__right {
+    margin-left: auto;
+  }
+
+  .toprow {
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .toprow__name {
+    font-size: 13px;
+  }
+
+  .toprow__right {
+    font-size: 11px;
+  }
+
+  .pcard {
+    min-height: 0;
+  }
+
+  .pcard__foot {
+    flex-wrap: wrap;
+  }
+
+  .teamcard__people {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .teamgrid .pcard--dashed {
+    min-height: 120px !important;
+  }
+
+  .empty {
+    padding: 44px 0;
+  }
+
+  .auth__right {
+    padding: 24px 16px 32px;
+  }
+
+  .auth__form h1 {
+    font-size: 24px;
+  }
+
+  .auth__brand {
+    font-size: 48px;
+  }
+
+  .auth__row {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .stats-teams-head {
+    flex-wrap: wrap;
+  }
+
+  .stats-teams-head .btn {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+}
+
+/* ---------- узкие телефоны ---------- */
+
+@media (max-width: 600px) {
+  .kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Поиск раскрывается поверх верхней строки шапки */
+  .searchinput {
+    position: absolute;
+    top: 8px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    height: 42px;
+    z-index: 5;
+    background: var(--bg);
+  }
+
+  .modal__foot .spacer {
+    flex-basis: 100%;
+    height: 0;
+  }
+
+  .modal__foot .btn {
+    flex: 1 1 auto;
+  }
+
+  .teamcard--big {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 380px) {
+  .kpis {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .headerbtn {
+    padding: 0 10px;
+  }
+
+  .pagehead h1 {
+    font-size: 22px;
+  }
+}

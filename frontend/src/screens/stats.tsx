@@ -301,7 +301,7 @@ export function StatsPage() {
         <DailyChart points={points} />
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '8px 0 16px' }}>
+      <div className="stats-teams-head">
         <h3 style={{ fontSize: 18, fontWeight: 800, margin: 0 }}>Команды</h3>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {aiError !== null && <span style={{ color: 'var(--red)', fontSize: 13 }}>{aiError}</span>}

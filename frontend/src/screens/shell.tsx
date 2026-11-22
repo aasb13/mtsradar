@@ -72,8 +72,7 @@ function SearchBox() {
     return (
       <input
         ref={inputRef}
-        className="input"
-        style={{ width: 280, height: 40 }}
+        className="input searchinput"
         value={state.search}
         placeholder="Поиск по номеру, названию, продукту…"
         onChange={e => dispatch({ type: 'SET_SEARCH', search: e.target.value })}
@@ -93,7 +92,7 @@ function SearchBox() {
       }}
     >
       <SearchIcon size={16} />
-      Поиск
+      <span className="headerbtn__label">Поиск</span>
     </button>
   )
 }
@@ -182,7 +181,7 @@ function AvatarMenu({ onClose }: { onClose: () => void }) {
   const user = state.user
   if (user === null) return null
   return (
-    <div className="bell-menu" style={{ width: 300 }}>
+    <div className="bell-menu bell-menu--avatar">
       <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border-soft)' }}>
         <p style={{ fontWeight: 700 }}>{user.fullName ?? user.email}</p>
         <p style={{ fontSize: 13, color: 'var(--text-2)' }}>{user.email}</p>
@@ -281,7 +280,7 @@ export function Header() {
             onClick={() => navigate('/stats')}
           >
             <StatsIcon size={16} />
-            Статистика
+            <span className="headerbtn__label">Статистика</span>
           </button>
         )}
         <div style={{ position: 'relative' }}>

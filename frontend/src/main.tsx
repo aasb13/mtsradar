@@ -1,5 +1,6 @@
 import '@fontsource-variable/inter'
 import './styles.css'
+import './responsive.css'
 import { createRoot } from 'react-dom/client'
 import App from './App'
 

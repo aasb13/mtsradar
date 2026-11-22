@@ -226,7 +226,7 @@ export function IncidentPanel() {
         )}
 
         {commentOpen && (
-          <div style={{ margin: '-10px 0 20px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+          <div className="commentform">
             <Textarea
               style={{ minHeight: 60, flex: 1 }}
               value={commentText}
