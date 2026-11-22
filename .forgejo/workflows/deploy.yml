@@ -1,0 +1,17 @@
+name: Deploy
+
+# Деплой на демо-сервер при пуше в master. Раннер с меткой mtsradar:host работает
+# на самой машине деплоя (Raspberry Pi, host-исполнитель), поэтому checkout идёт
+# в workspace раннера, а deploy.sh синхронизирует код в /srv/mtsradar и пересобирает стек.
+on:
+  push:
+    branches: [master]
+
+jobs:
+  deploy:
+    runs-on: mtsradar:host
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy
+        run: ./deploy/deploy.sh
