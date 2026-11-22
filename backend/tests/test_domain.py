@@ -11,7 +11,7 @@ from app.domain.diff import change_kinds, diff
 from app.domain.normalize import ItsmIncident, format_dt, reconcile_codes, sanitize, to_storage
 
 S = Settings(_env_file=None)
-# базовая выгрузка организаторов (44 записи); демо-файл data/incidents.json — её развитие
+# базовая выгрузка организаторов; демо-файл data/incidents.json — её развитие
 DATA = json.loads(
     (Path(__file__).parent.parent.parent / "data" / "character_problems.json").read_text(encoding="utf-8")
 )
@@ -29,7 +29,7 @@ def by_id(inc_id: str) -> dict:
 
 
 def test_whole_file_parses():
-    assert len([load(r) for r in DATA]) == 44
+    assert len([load(r) for r in DATA]) == len(DATA)
 
 
 def test_dates_normalized_to_ms_and_sentinel_is_null():
