@@ -21,7 +21,7 @@ from app.db.mongo import get_db
 from app.db.redis import get_redis
 from app.domain.enums import Role
 from app.services.notify import deliver
-from app.services.users import create_user, public_user
+from app.services.users import create_user, public_user, publish_roster_changed
 
 router = APIRouter(tags=["registration"])
 
@@ -164,6 +164,7 @@ async def approve(request_id: str, body: ApproveIn, admin: AdminUser) -> dict[st
         },
     )
     await rabbit.publish("registration.decided", {"id": request_id, "status": "approved", "email": doc["email"]})
+    await publish_roster_changed()
     return public_user(user)
 
 

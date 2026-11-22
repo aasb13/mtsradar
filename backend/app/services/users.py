@@ -4,6 +4,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from app.bus import rabbit
 from app.core.security import hash_password
 from app.db.mongo import get_db
 from app.domain.enums import Role
@@ -69,6 +70,17 @@ async def create_user(
     }
     await get_db().users.insert_one(doc)
     return doc
+
+
+async def publish_roster_changed() -> None:
+    """Состав пользователей изменился: публикуем актуальное число активных координаторов.
+
+    Счётчик живёт в шапке дашборда («Онлайн · N координаторов»); без события каждый
+    клиент показывал бы значение, посчитанное при входе, — смена роли, удаление или
+    одобрение заявки не обновили бы его до перезахода.
+    """
+    count = await get_db().users.count_documents({"role": Role.COORDINATOR, "deletedAt": None})
+    await rabbit.publish("user.changed", {"coordinatorCount": count})
 
 
 async def ensure_bootstrap_admin(email: str, password: str) -> None:

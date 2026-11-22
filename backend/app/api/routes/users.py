@@ -11,7 +11,7 @@ from app.api.deps import AdminUser, StaffUser
 from app.core.security import hash_password
 from app.db.mongo import get_db
 from app.domain.enums import Role
-from app.services.users import create_user, public_user
+from app.services.users import create_user, public_user, publish_roster_changed
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -51,9 +51,11 @@ async def get_user(user_id: str, _: StaffUser) -> dict[str, Any]:
 @router.post("", status_code=201)
 async def create(body: UserCreate, _: AdminUser) -> dict[str, Any]:
     try:
-        return public_user(await create_user(body.email, body.password, body.fullName, body.role, body.itsmLogin))
+        user = await create_user(body.email, body.password, body.fullName, body.role, body.itsmLogin)
     except DuplicateKeyError as e:
         raise HTTPException(status.HTTP_409_CONFLICT, "Пользователь с таким email уже есть") from e
+    await publish_roster_changed()
+    return public_user(user)
 
 
 @router.patch("/{user_id}")
@@ -75,6 +77,8 @@ async def update(user_id: str, body: UserUpdate, admin: AdminUser) -> dict[str, 
         res = await get_db().users.update_one({"_id": user_id, "deletedAt": None}, {"$set": upd})
         if res.matched_count == 0:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Пользователь не найден")
+        if "role" in upd:
+            await publish_roster_changed()
     return await get_user(user_id, admin)
 
 
@@ -87,3 +91,4 @@ async def delete(user_id: str, admin: AdminUser) -> None:
     )
     if res.matched_count == 0:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Пользователь не найден")
+    await publish_roster_changed()

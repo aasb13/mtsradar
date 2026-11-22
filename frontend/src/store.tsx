@@ -272,7 +272,7 @@ function reducer(state: State, action: Action): State {
     case 'SET_RESOLVED_YESTERDAY':
       return { ...state, resolvedYesterday: action.count }
     case 'SET_COORDINATOR_COUNT':
-      return { ...state, coordinatorCount: Math.max(1, action.count) }
+      return { ...state, coordinatorCount: action.count }
     case 'CONN':
       return { ...state, connection: action.state }
     case 'TICK':
@@ -454,6 +454,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // счётчик координаторов в шапке: пересчитываем по событию user.changed и при переподключении
+  const refreshCoordinatorCount = useCallback(async () => {
+    try {
+      const all = await api.fetchUsers()
+      dispatch({
+        type: 'SET_COORDINATOR_COUNT',
+        count: all.filter(u => u.role === 'coordinator' && u.deletedAt === null).length,
+      })
+    } catch (err) {
+      console.error('Не удалось загрузить пользователей', err)
+    }
+  }, [])
+
   const dashboardTimer = useRef<number | null>(null)
   const scheduleDashboardRefresh = useCallback(() => {
     if (dashboardTimer.current !== null) return
@@ -472,15 +485,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .fetchNotifications()
         .then(items => dispatch({ type: 'SET_NOTIFICATIONS', items: items.items, unread: items.unread }))
         .catch(err => console.error('Не удалось загрузить уведомления', err))
-      const users = api
-        .fetchUsers()
-        .then(all =>
-          dispatch({
-            type: 'SET_COORDINATOR_COUNT',
-            count: all.filter(u => u.role === 'coordinator' && u.deletedAt === null).length,
-          }),
-        )
-        .catch(err => console.error('Не удалось загрузить пользователей', err))
+      const users = refreshCoordinatorCount()
       try {
         const [dashboard, dictionaries] = await base
         const groups = Object.values(dashboard.groups).flat()
@@ -498,7 +503,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'BOOT_FAIL', message: 'Не удалось загрузить данные дашборда' })
       }
     },
-    [refreshBoard, refreshStats],
+    [refreshBoard, refreshStats, refreshCoordinatorCount],
   )
 
   // восстановление сессии при старте
@@ -529,6 +534,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       onReconnected: () => {
         void refreshDashboard()
         void refreshBoard()
+        void refreshCoordinatorCount()
       },
       onEvent: (event: WsEnvelope) => {
         const payload = event.payload
@@ -594,6 +600,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
             // заявки на регистрацию: открытый раздел «Пользователи» перезагружает список
             window.dispatchEvent(new CustomEvent('radar:registration'))
             break
+          case 'user.changed': {
+            // состав пользователей изменился: сервер считает координаторов сам, доверяем его числу
+            const count = payload.coordinatorCount
+            if (typeof count === 'number' && Number.isFinite(count)) {
+              dispatch({ type: 'SET_COORDINATOR_COUNT', count })
+            }
+            break
+          }
           case 'chat.updated':
             // чат с BigDad: открытый экран чата дополняет сообщения, список сессий обновляется
             window.dispatchEvent(new CustomEvent('radar:chat', { detail: payload }))
@@ -613,7 +627,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       },
     })
     return dispose
-  }, [user, refreshDashboard, refreshBoard, refreshStats, scheduleDashboardRefresh, showToast])
+  }, [user, refreshDashboard, refreshBoard, refreshStats, scheduleDashboardRefresh, refreshCoordinatorCount, showToast])
 
   const loginWithPair = useCallback(
     async (pair: TokenPair, remember = true) => {
