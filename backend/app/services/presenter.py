@@ -71,6 +71,8 @@ def card(doc: dict[str, Any], now: datetime, s: Settings | None = None) -> dict[
         "sla": sla,
         "freeze": freeze,
         "acknowledged": ack,
+        # координатор, на которого распределён инцидент при появлении («Ваши инциденты»)
+        "routedTo": doc.get("route"),
         "ai": {
             "summary": ai.get("summary"),
             "riskScore": ai.get("riskScore"),

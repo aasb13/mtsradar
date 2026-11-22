@@ -21,7 +21,7 @@ from app.db.mongo import get_db
 from app.domain.classify import flags, structural_groups
 from app.domain.diff import change_kinds, diff
 from app.domain.enums import Group
-from app.services import presenter
+from app.services import presenter, routing
 
 log = logging.getLogger(__name__)
 
@@ -138,8 +138,14 @@ async def save_incident(
     if ai and changes:
         ai = {**ai, "stale": True}  # данные поменялись — ИИ-выводы надо пересчитать
     ack = None if Group.CRITICAL in entered else (prev_doc or {}).get("ack")
+    # новый инцидент распределяется конкретному координатору («Ваши инциденты»), не в общую кучу;
+    # первичная загрузка (silent) — это стартовая база, а не «появился инцидент»
+    if status == "created" and not silent:
+        route = await routing.new_route()
+    else:
+        route = (prev_doc or {}).get("route")
     members = (prev_doc or {}).get("members") or []
-    doc = {"_id": incident_id, "data": data, "meta": meta, "ai": ai, "ack": ack, "members": members}
+    doc = {"_id": incident_id, "data": data, "meta": meta, "ai": ai, "ack": ack, "route": route, "members": members}
 
     incidents = get_db().incidents
     if prev_doc is None:
@@ -176,6 +182,7 @@ async def save_incident(
             "groupsEntered": entered,
             "groupsLeft": left,
             "silent": silent,
+            "route": route,
             "card": presenter.card(doc, now),
         },
     )

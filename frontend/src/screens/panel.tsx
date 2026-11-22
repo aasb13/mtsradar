@@ -299,7 +299,7 @@ export function IncidentPanel() {
             <p className="pgrid__label">Координатор</p>
             <p className="pgrid__value">
               <Avatar size="sm" tone="ghost" />
-              {card.acknowledged?.name ?? state.user?.fullName ?? '—'}
+              {card.routedTo?.name ?? card.acknowledged?.name ?? state.user?.fullName ?? '—'}
             </p>
           </div>
           <div>

@@ -5,6 +5,7 @@ import { Header, ToastStack } from './screens/shell'
 import { LoginPage, PendingPage, RegisterPage } from './screens/auth'
 import { KanbanPage } from './screens/kanban'
 import { AttentionPage } from './screens/attention'
+import { InboxPage } from './screens/inbox'
 import { StatsPage } from './screens/stats'
 import { ScreenPage } from './screens/screen'
 import { ChatPage } from './screens/chat'
@@ -19,8 +20,9 @@ import { Loading } from './ui'
 import { ErrorScreen } from './screens/error'
 
 const HOME_BY_ROLE: Record<Role, string> = {
-  coordinator: '/',
-  admin: '/',
+  // первая категория координатора — его личная очередь; общая доска живёт на /kanban
+  coordinator: '/mine',
+  admin: '/kanban',
   developer: '/dev',
   viewer: '/qa',
 }
@@ -60,6 +62,12 @@ function Screens() {
     }
     if (route === '/login' || route === '/register' || route === '/pending') {
       navigate(nextIncidentPath() ?? HOME_BY_ROLE[state.user.role], true)
+      return
+    }
+    // главная — первая категория роли: у координатора это «Ваши инциденты»
+    if (route === '/') {
+      navigate(HOME_BY_ROLE[state.user.role], true)
+      return
     }
     // чужой профиль разработчику не виден: его видимость ограничена своими инцидентами
     if (route.startsWith('/profile/') && state.user.role === 'developer' && route !== `/profile/${state.user.id}`) {
@@ -123,10 +131,16 @@ function Screens() {
       ) : (
         <TeamProfilePage name={decodePathPart(teamName)} />
       )
+  } else if (route === '/') {
+    // главная — первая категория роли: у координатора это «Ваши инциденты»; переадресация в эффекте ниже
+    screen = <Loading />
   } else
     switch (route) {
-    case '/':
+    case '/kanban':
       screen = isStaff ? <KanbanPage /> : user.role === 'developer' ? <DevPage /> : <QaPage />
+      break
+    case '/mine':
+      screen = isStaff ? <InboxPage /> : <ErrorScreen code={403} />
       break
     case '/attention':
       screen = <AttentionPage />

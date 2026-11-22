@@ -64,6 +64,8 @@ export interface Card {
   sla: Sla
   freeze?: CardFreeze | null
   acknowledged: { userId: string; name?: string | null; at: string } | null
+  /** Координатор, на которого инцидент распределён при появлении; doneAt — когда передали команде. */
+  routedTo: { userId: string; name?: string | null; at: string; doneAt?: string | null } | null
   ai: AiCardInfo | null
   itsmUrl: string
   updatedAt: string | null

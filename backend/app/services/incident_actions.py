@@ -57,6 +57,13 @@ async def apply_patch(doc: dict[str, Any], fields: dict[str, Any], user: dict[st
         fields["deadline"] = to_ms_utc(fields["deadline"])
     if "assignedGroupName" in fields and fields["assignedGroupName"] != data.get("assignedGroupName"):
         data["lastAssignmentToTeamDateTime"] = to_ms_utc(_now())
+    # назначение команды координатором — это и есть «распределить»: маршрут из «Ваших инцидентов» закрыт.
+    # Подтверждение прежней команды тоже считается: штампуем время назначения, иначе diff пуст
+    # и save_incident не сохранил бы закрытие маршрута
+    route = doc.get("route")
+    if "assignedGroupName" in fields and route is not None and route.get("doneAt") is None:
+        route["doneAt"] = _now()
+        data["lastAssignmentToTeamDateTime"] = to_ms_utc(_now())
     data.update(fields)
     return await _save(doc, data, user)
 

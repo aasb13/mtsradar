@@ -11,6 +11,7 @@ from app.domain.enums import Role
 
 NOTIFICATION_KINDS = {
     "incident.assigned_to_me": "Вас добавили в инцидент (для разработчиков)",
+    "incident.routed_to_you": "Инцидент распределён на вас (личная очередь)",
     "incident.new": "Появился новый инцидент",
     "critical.new": "Новый критический инцидент",
     "critical.resolved": "Критический инцидент решён",

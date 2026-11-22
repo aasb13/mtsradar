@@ -1,7 +1,7 @@
 """MongoDB через официальный асинхронный драйвер PyMongo (Motor объявлен устаревшим).
 
 Коллекции:
-  incidents       {_id: "INC...", data: {...запись ITSM как в файле...}, meta: {...}, ai: {...}, ack: {...}}
+  incidents       {_id, data: {...запись ITSM как в файле...}, meta, ai, ack, route}
   incident_events история изменений (путь инцидента)
   comments        заметки координаторов
   users           пользователи нашей системы (координаторы, админы)
@@ -61,6 +61,9 @@ async def ensure_indexes() -> None:
     await db.registration_requests.create_index("email", unique=True, partialFilterExpression={"status": "pending"})
     await db.incidents.create_index("data.assignedEmployeeLogin")
     await db.incidents.create_index("members")
+    # распределение на координаторов: очередь дежурного и последний маршрут
+    await db.incidents.create_index([("route.userId", ASCENDING), ("route.doneAt", ASCENDING)])
+    await db.incidents.create_index([("route.at", DESCENDING)])
     await db.devices.create_index("userId")
     await db.notifications.create_index([("userId", ASCENDING), ("readAt", ASCENDING), ("createdAt", DESCENDING)])
     await db.import_runs.create_index([("startedAt", DESCENDING)])

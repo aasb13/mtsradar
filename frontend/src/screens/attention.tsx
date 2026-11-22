@@ -96,7 +96,10 @@ export function AttentionPage() {
 
       <div className="toolrow">
         <div className="tabs">
-          <button type="button" className="tabs__tab" onClick={() => navigate('/')}>
+          <button type="button" className="tabs__tab" onClick={() => navigate('/mine')}>
+            Ваши инциденты
+          </button>
+          <button type="button" className="tabs__tab" onClick={() => navigate('/kanban')}>
             Канбан
           </button>
           <button type="button" className="tabs__tab tabs__tab--active">

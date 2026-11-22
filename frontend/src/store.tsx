@@ -662,7 +662,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
               scheduleDictionariesRefresh()
             }
             if (event.type === 'incident.created') {
-              showToast(`${card?.id ?? ''} — ${FEED_TEXT[event.type] ?? 'событие'}`, 'info', card?.id)
+              // инцидент распределён на текущего координатора — его личное сообщение вместо общего
+              const routedToMe =
+                card?.routedTo !== null &&
+                card?.routedTo !== undefined &&
+                card.routedTo.userId === stateRef.current.user?.id
+              if (routedToMe) {
+                showToast(
+                  `${card?.id ?? ''} поступил вам — передайте команде`,
+                  card?.isCritical ? 'critical' : 'info',
+                  card?.id,
+                )
+              } else {
+                showToast(`${card?.id ?? ''} — ${FEED_TEXT[event.type] ?? 'событие'}`, 'info', card?.id)
+              }
             }
             if (event.type === 'incident.ai_updated') {
               showToast('BigDad обновил анализ инцидента', 'info', card?.id)
@@ -774,7 +787,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       storeTokens(pair.accessToken, pair.refreshToken, remember)
       await boot(pair.user)
       const next = nextIncidentPath()
-      navigate(next ?? (pair.user.role === 'developer' ? '/dev' : pair.user.role === 'viewer' ? '/qa' : '/'))
+      navigate(next ?? (pair.user.role === 'developer' ? '/dev' : pair.user.role === 'viewer' ? '/qa' : pair.user.role === 'coordinator' ? '/mine' : '/'))
     },
     [boot],
   )

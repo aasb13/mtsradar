@@ -294,6 +294,9 @@ export function KanbanPage() {
 
       <div className="toolrow">
         <div className="tabs">
+          <button type="button" className="tabs__tab" onClick={() => navigate('/mine')}>
+            Ваши инциденты
+          </button>
           <button type="button" className="tabs__tab tabs__tab--active">Канбан</button>
           <button type="button" className="tabs__tab" onClick={() => navigate('/attention')}>
             Группы внимания

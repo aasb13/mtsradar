@@ -77,6 +77,16 @@ def rules_for(event_type: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
             add("incident.new", sev, f"Новый инцидент {inc_id}", where)
         if Group.COORDINATORS in entered:
             add("coordinators.assigned", "high", f"{inc_id} назначен на координаторов", where)
+        # инцидент распределён конкретному координатору — только ему и приходит личное уведомление
+        route = payload.get("route")
+        if route is not None:
+            add(
+                "incident.routed_to_you",
+                "high",
+                f"Новый инцидент {inc_id} распределён на вас",
+                where,
+                {"anyUsers": [route["userId"]]},
+            )
     elif event_type == "incident.updated":
         if Group.CRITICAL in entered:
             add("critical.new", "critical", f"Критический инцидент {inc_id}", where)
