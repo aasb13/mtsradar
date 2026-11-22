@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { initials, pluralize, relativeTime } from '../format'
 import { navigate, useRoute } from '../router'
 import { useApp } from '../store'
-import { BellIcon, CloseIcon, LogoutIcon, SearchIcon, StatsIcon } from '../ui'
+import { BellIcon, CloseIcon, LogoutIcon, MoonIcon, SearchIcon, StatsIcon, SunIcon } from '../ui'
 import * as api from '../api'
 import type { Notification, Role } from '../types'
 
@@ -198,7 +198,7 @@ function AvatarMenu({ onClose }: { onClose: () => void }) {
             onClose()
           }}
         >
-          {state.theme === 'dark' ? '☀ Светлая тема' : '☾ Тёмная тема'}
+          {state.theme === 'dark' ? (<><SunIcon size={16} /> Светлая тема</>) : (<><MoonIcon size={16} /> Тёмная тема</>)}
         </button>
         <button
           type="button"

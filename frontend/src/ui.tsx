@@ -474,3 +474,20 @@ export function MailIcon({ size }: IconProps) {
     </>
   ))
 }
+
+export function SunIcon({ size }: IconProps) {
+  return svg(size, (
+    <>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+    </>
+  ))
+}
+
+export function MoonIcon({ size }: IconProps) {
+  return svg(size, <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5Z" />)
+}
+
+export function ArrowRightIcon({ size }: IconProps) {
+  return svg(size, <path d="M4 12h16m-6-6 6 6-6 6" />)
+}

@@ -9,6 +9,7 @@ import {
   Button,
   CheckCircleIcon,
   CheckIcon,
+  CloseIcon,
   CommentIcon,
   EmptyState,
   Field,
@@ -48,7 +49,7 @@ function IncidentDetailBox({ detail, card, actions }: { detail: IncidentDetail |
           <LinkIcon size={16} />
         </a>
         <button type="button" className="iconbtn" aria-label="Закрыть" onClick={() => dispatch({ type: 'OPEN_PANEL', id: null })}>
-          ✕
+          <CloseIcon size={16} />
         </button>
       </div>
       <h2 style={{ fontSize: 24, fontWeight: 800, margin: '22px 0 18px' }}>{card.header ?? 'Без названия'}</h2>

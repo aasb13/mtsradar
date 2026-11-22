@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import * as api from '../api'
 import { formatShort, formatTimeLeft, liveSla, relativeTime, shortName, slaBigValue } from '../format'
 import { useApp } from '../store'
 import type { AiAlternative, Card, Comment, HistoryEvent, IncidentDetail } from '../types'
-import { Avatar, Button, CloseIcon, CommentIcon, LinkIcon, Modal, RefreshIcon, SeverityBadge, SlaChip, SnowflakeIcon, SparkIcon, StatusPill, Textarea, TeamIcon } from '../ui'
+import { ArrowRightIcon, Avatar, Button, CloseIcon, CommentIcon, LinkIcon, Modal, RefreshIcon, SeverityBadge, SlaChip, SnowflakeIcon, SparkIcon, StatusPill, Textarea, TeamIcon } from '../ui'
 
 const HISTORY_TEXT: Record<string, string> = {
   created: 'Инцидент зарегистрирован',
@@ -11,21 +12,29 @@ const HISTORY_TEXT: Record<string, string> = {
   imported: 'Обновлено из выгрузки ITSM',
 }
 
-function changesText(event: HistoryEvent): string {
-  const parts: string[] = []
+function changeTransition(label: string, from: string, to: string): ReactNode {
+  return (
+    <span className="history__change">
+      {label}: {from} <ArrowRightIcon size={12} /> {to}
+    </span>
+  )
+}
+
+function changesText(event: HistoryEvent): ReactNode {
+  const parts: ReactNode[] = []
   for (const change of event.changes) {
     const field = typeof change.field === 'string' ? change.field : null
     if (field === null) continue
     const to = change.to
     const from = change.from
     if (field === 'stateId' || field === 'state') {
-      parts.push(`Статус: ${String(from ?? '—')} → ${String(to ?? '—')}`)
+      parts.push(changeTransition('Статус', String(from ?? '—'), String(to ?? '—')))
     } else if (field === 'priorityId' || field === 'priority') {
-      parts.push(`Приоритет: ${String(from ?? '—')} → ${String(to ?? '—')}`)
+      parts.push(changeTransition('Приоритет', String(from ?? '—'), String(to ?? '—')))
     } else if (field === 'deadline') {
-      parts.push(`Срок: ${formatShort(typeof from === 'string' ? from : null)} → ${formatShort(typeof to === 'string' ? to : null)}`)
+      parts.push(changeTransition('Срок', formatShort(typeof from === 'string' ? from : null), formatShort(typeof to === 'string' ? to : null)))
     } else if (field === 'assignedGroupName') {
-      parts.push(`Команда: ${typeof from === 'string' && from !== '' ? from : '—'} → ${typeof to === 'string' && to !== '' ? to : '—'}`)
+      parts.push(changeTransition('Команда', typeof from === 'string' && from !== '' ? from : '—', typeof to === 'string' && to !== '' ? to : '—'))
     } else if (field === 'members') {
       const added = Array.isArray(change.added) ? change.added.length : 0
       const removed = Array.isArray(change.removed) ? change.removed.length : 0
@@ -38,7 +47,8 @@ function changesText(event: HistoryEvent): string {
   if (event.type === 'created') return HISTORY_TEXT.created
   if (event.type === 'acknowledged') return HISTORY_TEXT.acknowledged
   if (event.type === 'imported') return HISTORY_TEXT.imported
-  return parts.length > 0 ? parts.join(' · ') : HISTORY_TEXT[event.type] ?? 'Событие'
+  if (parts.length === 0) return HISTORY_TEXT[event.type] ?? 'Событие'
+  return parts.map((part, i) => <Fragment key={i}>{i > 0 ? ' · ' : null}{part}</Fragment>)
 }
 
 function slaHoursOf(card: Card): number | null {

@@ -1468,6 +1468,10 @@ a {
   color: var(--text-2);
 }
 
+.history__change svg {
+  vertical-align: -2px;
+}
+
 .history__text b {
   color: var(--text);
 }
