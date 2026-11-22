@@ -6,7 +6,7 @@ import { navigate } from '../router'
 import { useApp } from '../store'
 import type { FreezeRequest } from '../store'
 import type { AiAlternative, Card, Comment, HistoryEvent, IncidentDetail } from '../types'
-import { ArrowRightIcon, Avatar, Button, CloseIcon, CommentIcon, LinkIcon, Modal, RefreshIcon, SeverityBadge, SlaChip, SnowflakeIcon, SparkIcon, StatusPill, Textarea, TeamIcon } from '../ui'
+import { ArrowRightIcon, Avatar, Button, CloseIcon, CommentIcon, LinkIcon, Modal, RefreshIcon, Select, SeverityBadge, SlaChip, SnowflakeIcon, SparkIcon, StatusPill, stringOptions, Textarea, TeamIcon } from '../ui'
 
 const HISTORY_TEXT: Record<string, string> = {
   created: 'Инцидент зарегистрирован',
@@ -754,12 +754,11 @@ export function FreezeModal() {
       </div>
       <label className="field">
         <span className="field__label">Причина</span>
-        <select className="input" value={reason} onChange={e => setReason(e.target.value)}>
-          <option>Ждём ответа подрядчика</option>
-          <option>Плановые работы на стороне клиента</option>
-          <option>Недостаточно данных от заявителя</option>
-          <option>Другое</option>
-        </select>
+        <Select
+          value={reason}
+          options={stringOptions(['Ждём ответа подрядчика', 'Плановые работы на стороне клиента', 'Недостаточно данных от заявителя', 'Другое'])}
+          onChange={setReason}
+        />
       </label>
       <label className="field">
         <span className="field__label">Разморозить автоматически</span>

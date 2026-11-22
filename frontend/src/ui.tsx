@@ -1,5 +1,5 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from 'react'
-import { useEffect, useRef } from 'react'
+import type { ButtonHTMLAttributes, CSSProperties, InputHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, ReactNode, TextareaHTMLAttributes } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { initials, liveSla, priorityMeta } from './format'
 import type { Card } from './types'
 
@@ -117,11 +117,131 @@ export function Textarea({ className = '', ...rest }: TextareaHTMLAttributes<HTM
   return <textarea className={`input input--area ${className}`} {...rest} />
 }
 
-export function Select({ className = '', children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
+export interface SelectOption<V extends string = string> {
+  value: V
+  label: string
+}
+
+export function stringOptions(values: string[]): SelectOption[] {
+  return values.map(v => ({ value: v, label: v }))
+}
+
+export function Select<V extends string>({
+  value,
+  options,
+  onChange,
+  className = '',
+  style,
+}: {
+  value: V
+  options: SelectOption<V>[]
+  onChange: (value: V) => void
+  className?: string
+  style?: CSSProperties
+}) {
+  const [open, setOpen] = useState(false)
+  const [hl, setHl] = useState(0)
+  const id = useId()
+  const ref = useRef<HTMLSpanElement>(null)
+  const hlRef = useRef<HTMLButtonElement>(null)
+  const selectedIdx = options.findIndex(o => o.value === value)
+
+  useEffect(() => {
+    if (!open) return
+    // Escape должен закрыть только меню, а не модальное окно под ним
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        setOpen(false)
+      } else if (e.key === 'Tab') {
+        setOpen(false)
+      }
+    }
+    const onDown = (e: PointerEvent) => {
+      if (ref.current !== null && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('pointerdown', onDown)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('pointerdown', onDown)
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (open) hlRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [open, hl])
+
+  const pick = (v: V) => {
+    setOpen(false)
+    onChange(v)
+  }
+
+  const onTriggerKey = (e: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (!open) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        setHl(Math.max(0, selectedIdx))
+        setOpen(true)
+      }
+      return
+    }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      const delta = e.key === 'ArrowDown' ? 1 : -1
+      setHl(h => (h + delta + options.length) % options.length)
+    } else if (e.key === 'Home') {
+      e.preventDefault()
+      setHl(0)
+    } else if (e.key === 'End') {
+      e.preventDefault()
+      setHl(options.length - 1)
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      const o = options[hl]
+      if (o !== undefined) pick(o.value)
+    }
+  }
+
   return (
-    <span className={`select ${className}`}>
-      <select {...rest}>{children}</select>
-      <ChevronDownIcon />
+    <span className={`select ${className}`} style={style} ref={ref}>
+      <button
+        type="button"
+        className="select__trigger"
+        disabled={options.length === 0}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-activedescendant={open ? `${id}-opt${hl}` : undefined}
+        onClick={() => {
+          if (!open) setHl(Math.max(0, selectedIdx))
+          setOpen(!open)
+        }}
+        onKeyDown={onTriggerKey}
+      >
+        <span className="select__value">{options[selectedIdx]?.label ?? '—'}</span>
+        <span className="select__chev">
+          <ChevronDownIcon size={15} />
+        </span>
+      </button>
+      {open && (
+        <span className="select-menu" role="listbox">
+          {options.map((o, i) => (
+            <button
+              key={o.value}
+              ref={i === hl ? hlRef : undefined}
+              type="button"
+              role="option"
+              id={`${id}-opt${i}`}
+              aria-selected={o.value === value}
+              className={`select__opt${i === hl ? ' select__opt--hl' : ''}${o.value === value ? ' select__opt--sel' : ''}`}
+              onMouseEnter={() => setHl(i)}
+              onClick={() => pick(o.value)}
+            >
+              {o.label}
+            </button>
+          ))}
+        </span>
+      )}
     </span>
   )
 }

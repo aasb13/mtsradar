@@ -20,6 +20,7 @@ import {
   MailIcon,
   Modal,
   PlusIcon,
+  Select,
   SeverityBadge,
   SlaChip,
   StatusPill,
@@ -27,6 +28,7 @@ import {
   TrashIcon,
   UploadIcon,
   UserIcon,
+  stringOptions,
 } from '../ui'
 
 const ROLE_OPTIONS: { key: Role; label: string }[] = [
@@ -331,14 +333,7 @@ function CreateIncidentModal({ onClose, onCreated }: { onClose: () => void; onCr
           <Input value={header} onChange={e => setHeader(e.target.value)} placeholder="Не приходят SMS-уведомления" />
         </Field>
         <Field label="Продукт">
-          <select className="input" value={product} onChange={e => setProduct(e.target.value)}>
-            {products.map(p => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-            {products.length === 0 && <option value="">—</option>}
-          </select>
+          <Select value={product} options={stringOptions(products)} onChange={setProduct} />
         </Field>
       </div>
       <Field label="Описание" hint={`Минимум 20 символов · ${description.length}/2000`}>
@@ -1097,13 +1092,11 @@ function InvitesSection() {
       <div className="tablecard" style={{ padding: 16 }}>
         <div className="formrow">
           <Field label="Роль">
-            <select className="input" value={role} onChange={e => setRole(e.target.value as Role)}>
-              {INVITE_ROLE_OPTIONS.map(o => (
-                <option key={o.key} value={o.key}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+            <Select
+              value={role}
+              options={INVITE_ROLE_OPTIONS.map(o => ({ value: o.key, label: o.label }))}
+              onChange={setRole}
+            />
           </Field>
           {role === 'developer' && (
             <Field label="Логин ITSM" hint="Как в инцидентах (assignedEmployeeLogin)">
@@ -1213,18 +1206,12 @@ function PendingRow({
 
 function RoleSelect({ role, onChange, pending = false }: { role: Role; onChange: (role: Role) => void; pending?: boolean }) {
   return (
-    <select
-      className="input"
-      style={{ height: 36, width: 190, fontWeight: 600, background: pending ? 'rgba(245,197,24,0.2)' : undefined }}
+    <Select
+      className={`select--compact ${pending ? 'select--pending' : ''}`}
       value={role}
-      onChange={e => onChange(e.target.value as Role)}
-    >
-      {ROLE_OPTIONS.map(o => (
-        <option key={o.key} value={o.key}>
-          {o.label}
-        </option>
-      ))}
-    </select>
+      options={ROLE_OPTIONS.map(o => ({ value: o.key, label: o.label }))}
+      onChange={onChange}
+    />
   )
 }
 
@@ -1290,13 +1277,7 @@ function InviteModal({ onClose, onInvited }: { onClose: () => void; onInvited: (
       </Field>
       <div className="formrow">
         <Field label="Роль">
-          <select className="input" value={role} onChange={e => setRole(e.target.value as Role)}>
-            {ROLE_OPTIONS.map(o => (
-              <option key={o.key} value={o.key}>
-                {o.label}
-              </option>
-            ))}
-          </select>
+          <Select value={role} options={ROLE_OPTIONS.map(o => ({ value: o.key, label: o.label }))} onChange={setRole} />
         </Field>
         <Field label="Логин ITSM" hint="Для разработчика — как в инцидентах">
           <Input value={itsmLogin} onChange={e => setItsmLogin(e.target.value)} placeholder="a.ivanov" />

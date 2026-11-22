@@ -19,6 +19,7 @@ import {
   Modal,
   RefreshIcon,
   SendIcon,
+  Select,
   SeverityBadge,
   SlaChip,
   SparkIcon,
@@ -28,6 +29,7 @@ import {
   TrashIcon,
   UndoIcon,
   UploadIcon,
+  stringOptions,
 } from '../ui'
 
 function IncidentDetailBox({ detail, card, actions }: { detail: IncidentDetail | null; card: Card; actions?: React.ReactNode }) {
@@ -364,11 +366,7 @@ function ReportModal({ card, onClose, onSent }: { card: Card; onClose: () => voi
       </Field>
       <div className="formrow">
         <Field label="Причина">
-          <select className="input" value={reason} onChange={e => setReason(e.target.value)}>
-            {REASONS.map(r => (
-              <option key={r}>{r}</option>
-            ))}
-          </select>
+          <Select value={reason} options={stringOptions(REASONS)} onChange={setReason} />
         </Field>
         <Field label="Ссылка на МР" hint="Необязательно">
           <Input value={mrLink} onChange={e => setMrLink(e.target.value)} placeholder="gitlab.mts.ru/billing/api/-/merge_requests/1842" />
@@ -623,12 +621,11 @@ function RejectModal({
         </div>
       </div>
       <Field label="Что не так">
-        <select className="input" value={reason} onChange={e => setReason(e.target.value)}>
-          <option>Исправление не воспроизводится</option>
-          <option>Проверка на затронутых сценариях не пройдена</option>
-          <option>Появились новые ошибки в логах</option>
-          <option>Другое</option>
-        </select>
+        <Select
+          value={reason}
+          options={stringOptions(['Исправление не воспроизводится', 'Проверка на затронутых сценариях не пройдена', 'Появились новые ошибки в логах', 'Другое'])}
+          onChange={setReason}
+        />
       </Field>
       <Field label="Комментарий для разработчика">
         <Textarea value={text} placeholder="На «Семейном» всё ещё 6–8 с" onChange={e => setText(e.target.value)} />

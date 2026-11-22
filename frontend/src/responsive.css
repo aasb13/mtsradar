@@ -245,7 +245,7 @@ button,
 
   /* 16px не даёт iOS Safari зумить страницу при фокусе на поле */
   .input,
-  .select select {
+  .select__trigger {
     font-size: 16px;
   }
 
