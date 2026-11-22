@@ -36,6 +36,7 @@ function IncidentDetailBox({ detail, card, actions }: { detail: IncidentDetail |
   const description = typeof meta.description === 'string' && meta.description !== '' ? meta.description : (card.shortDescription ?? '—')
   const solution = typeof meta.solution === 'string' && meta.solution !== '' ? meta.solution : null
   const ai = detail?.ai ?? null
+  const aiEnabled = state.dictionaries?.aiEnabled !== false
   return (
     <div className="detailcard">
       <div className="panel__top">
@@ -97,7 +98,7 @@ function IncidentDetailBox({ detail, card, actions }: { detail: IncidentDetail |
         </>
       )}
       {ai !== null && (ai.summary !== null || ai.riskScore !== null) && (
-        <div className="bigdad">
+        <div className={`bigdad ${aiEnabled ? '' : 'bigdad--off'}`}>
           <div className="bigdad__head">
             <span className="bigdad__icon">
               <SparkIcon size={17} />
@@ -110,6 +111,7 @@ function IncidentDetailBox({ detail, card, actions }: { detail: IncidentDetail |
               <RefreshIcon size={14} />
             </span>
           </div>
+          {!aiEnabled && <p className="bigdad__offnote">BigDad не подключён — ИИ-анализ недоступен</p>}
           {ai.summary !== null && <p className="bigdad__text">{ai.summary}</p>}
           {ai.riskScore !== null && (
             <>

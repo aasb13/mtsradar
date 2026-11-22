@@ -243,6 +243,7 @@ export interface Dictionaries {
   transitions: Record<string, number[]>
   coordinatorsGroupName: string
   criticalPriorityId: number
+  aiEnabled: boolean
   assignedGroups: string[]
   products: string[]
   serviceTypes: string[]

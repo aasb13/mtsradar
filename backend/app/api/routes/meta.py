@@ -36,6 +36,8 @@ async def dictionaries(_: StaffUser) -> dict[str, Any]:
         "transitions": {str(k): sorted(v) for k, v in TRANSITIONS.items()},
         "coordinatorsGroupName": s.coordinators_group_name,
         "criticalPriorityId": s.critical_priority_id,
+        # фронт красит BigDad в красный, если ИИ не настроен (LLM_API_BASE/LLM_MODEL)
+        "aiEnabled": bool(s.llm_api_base and s.llm_model),
         "assignedGroups": sorted(x for x in await db.incidents.distinct("data.assignedGroupName", alive) if x),
         "products": sorted(x for x in await db.incidents.distinct("data.productName", alive) if x),
         "serviceTypes": sorted(x for x in await db.incidents.distinct("data.serviceType", alive) if x),

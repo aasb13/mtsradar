@@ -60,6 +60,7 @@ function DailyChart({ points }: { points: DayPoint[] }) {
 
 export function StatsPage() {
   const { state } = useApp()
+  const aiEnabled = state.dictionaries?.aiEnabled !== false
   const [period, setPeriod] = useState<Period>('month')
   const cards = useMemo(() => [...state.cards.values()], [state.cards])
   const resolvedCards = useMemo(() => cards.filter(c => c.isResolved), [cards])
@@ -304,9 +305,14 @@ export function StatsPage() {
         <h3 style={{ fontSize: 18, fontWeight: 800, margin: 0 }}>Команды</h3>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {aiError !== null && <span style={{ color: 'var(--red)', fontSize: 13 }}>{aiError}</span>}
-          <Button variant="secondary" disabled={aiBusy} onClick={() => void refreshDescriptions()}>
+          <Button
+            variant={aiEnabled ? 'secondary' : 'danger'}
+            disabled={aiBusy || !aiEnabled}
+            title={aiEnabled ? undefined : 'BigDad не подключён — ИИ-описания команд недоступны'}
+            onClick={() => void refreshDescriptions()}
+          >
             <SparkIcon size={14} />
-            {aiBusy ? 'BigDad описывает команды…' : 'ИИ-описания команд'}
+            {aiBusy ? 'BigDad описывает команды…' : aiEnabled ? 'ИИ-описания команд' : 'BigDad не подключён'}
           </Button>
         </div>
       </div>

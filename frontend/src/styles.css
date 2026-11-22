@@ -1302,6 +1302,31 @@ a {
   margin-top: 22px;
 }
 
+/* BigDad не подключён (LLM не настроен) — блок краснеет, чтобы состояние было видно */
+.bigdad--off {
+  background: var(--red-tint-bg);
+  border: 1px solid var(--red);
+}
+
+.bigdad--off .bigdad__icon {
+  background: var(--red);
+}
+
+.bigdad--off .bigdad__title {
+  color: var(--red);
+}
+
+.bigdad--off .bigdad__refresh:hover {
+  color: var(--red);
+}
+
+.bigdad__offnote {
+  margin: 10px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--red);
+}
+
 .bigdad__head {
   display: flex;
   align-items: center;

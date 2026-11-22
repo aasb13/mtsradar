@@ -103,6 +103,7 @@ export function IncidentPanel() {
   const frozen = state.freeze[card.id] !== undefined
   const sla = liveSla(card, state.now)
   const ai = detail?.ai ?? null
+  const aiEnabled = state.dictionaries?.aiEnabled !== false
   const meta = (detail?.data ?? {}) as Record<string, unknown>
   const initiator = typeof meta.initiatorName === 'string' ? meta.initiatorName : null
   const canAct = state.user?.role === 'coordinator' || state.user?.role === 'admin'
@@ -267,7 +268,7 @@ export function IncidentPanel() {
         <p className="psection__text">{descriptionOf(detail, meta)}</p>
 
         {ai !== null && (ai.summary !== null || ai.riskScore !== null) && (
-          <div className="bigdad">
+          <div className={`bigdad ${aiEnabled ? '' : 'bigdad--off'}`}>
             <div className="bigdad__head">
               <span className="bigdad__icon">
                 <SparkIcon size={17} />
@@ -299,6 +300,7 @@ export function IncidentPanel() {
                 Обновить
               </button>
             </div>
+            {!aiEnabled && <p className="bigdad__offnote">BigDad не подключён — ИИ-анализ недоступен</p>}
             {ai.summary !== null && <p className="bigdad__text">{ai.summary}</p>}
             {ai.riskScore !== null && (
               <>
@@ -403,6 +405,7 @@ export function AssignModal() {
   const { state, dispatch, doAssign } = useApp()
   const id = state.assignId
   const card = id !== null ? state.cards.get(id) ?? null : null
+  const aiEnabled = state.dictionaries?.aiEnabled !== false
   const [team, setTeam] = useState<string | null>(null)
   const [executor, setExecutor] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -438,6 +441,7 @@ export function AssignModal() {
           })
           return
         }
+        if (!aiEnabled) return // BigDad не подключён — красную плашку рисует рендер, агента не зовём
         // рекомендации ещё нет — просим агента подобрать команду (это до минуты)
         setAiBusy(true)
         const rec = await api.requestTeamRecommendation(id)
@@ -454,7 +458,7 @@ export function AssignModal() {
     return () => {
       cancelled = true
     }
-  }, [id])
+  }, [id, aiEnabled])
 
   useEffect(() => {
     if (id === null) return
@@ -523,6 +527,12 @@ export function AssignModal() {
       }
     >
       <p style={{ fontWeight: 800, fontSize: 16, marginBottom: 12 }}>1. Команда</p>
+      {!aiEnabled && (
+        <p className="assignnote assignnote--error">
+          <SparkIcon size={14} />
+          BigDad не подключён — ИИ-рекомендация недоступна, команду можно выбрать вручную
+        </p>
+      )}
       {aiBusy && (
         <p className="assignnote assignnote--busy">
           <SparkIcon size={14} />
