@@ -1095,18 +1095,39 @@ export function AdminUsersPage() {
     setLoading(false)
   }
 
+  // смена роли приходит и в ответе PATCH, и по WebSocket — обновляем только одну строку,
+  // чтобы список не мигал индикатором загрузки и не сбрасывал позицию прокрутки
+  const applyUser = useCallback((updated: User) => {
+    setUsers(prev => {
+      const index = prev.findIndex(u => u.id === updated.id)
+      if (updated.deletedAt !== null) return index === -1 ? prev : prev.filter(u => u.id !== updated.id)
+      if (index === -1) {
+        const next = [...prev, updated]
+        next.sort((a, b) => (a.fullName ?? a.email).localeCompare(b.fullName ?? b.email, 'ru'))
+        return next
+      }
+      const next = prev.slice()
+      next[index] = { ...next[index], ...updated }
+      return next
+    })
+  }, [])
+
   useEffect(() => {
     void reload()
     // новые заявки и решения приходят по WebSocket — молча обновляем список
     const onRegistration = () => void load()
-    const onUsers = () => void load()
+    const onUsers = (event: Event) => {
+      const updated = (event as CustomEvent<User>).detail
+      if (typeof updated?.id === 'string') applyUser(updated)
+      else void load()
+    }
     window.addEventListener('radar:registration', onRegistration)
     window.addEventListener('radar:users-changed', onUsers)
     return () => {
       window.removeEventListener('radar:registration', onRegistration)
       window.removeEventListener('radar:users-changed', onUsers)
     }
-  }, [])
+  }, [applyUser])
 
   const approve = async (request: RegistrationRequest, role: Role, itsmLogin: string) => {
     try {
@@ -1132,8 +1153,8 @@ export function AdminUsersPage() {
 
   const changeRole = async (user: User, role: Role) => {
     try {
-      await api.patchUser(user.id, { role })
-      await reload()
+      const updated = await api.patchUser(user.id, { role })
+      applyUser(updated)
       showToast(`${user.email} — роль ${ROLE_LABELS[role]}`, 'success')
     } catch (err) {
       console.error('Не удалось изменить роль', err)
