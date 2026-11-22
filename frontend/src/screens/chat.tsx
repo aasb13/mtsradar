@@ -103,10 +103,7 @@ export function ChatPage() {
       try {
         const res = await api.fetchChatSession(id)
         setMessages(res.messages)
-        setSessions(prev => {
-          const rest = prev.filter(s => s.id !== id)
-          return [res.session, ...rest]
-        })
+        setSessions(prev => prev.map(s => (s.id === id ? res.session : s)))
         if (replaceUrl) navigate(`/chat?s=${id}`, true)
         return res
       } catch (err) {
@@ -120,8 +117,22 @@ export function ChatPage() {
     [activate, showToast],
   )
 
+  /** Откат сессии, созданной для сообщения, которое не дошло до сервера. */
+  const discardSession = useCallback(
+    (sid: string) => {
+      setSessions(prev => prev.filter(s => s.id !== sid))
+      if (activeIdRef.current === sid) {
+        activate(null)
+        setMessages([])
+        navigate('/chat', true)
+      }
+    },
+    [activate],
+  )
+
   /** Сообщение в сессию со стримом ответа BigDad. onUndelivered — если сервер не принял
-   * сообщение (ни одного события стрима не пришло): отправитель возвращает введённый текст. */
+   * сообщение (ни одного события стрима не пришло): отправитель возвращает введённый текст
+   * и убирает только что созданную пустую беседу. */
   const runExchange = useCallback(
     async (
       sid: string,
@@ -132,6 +143,12 @@ export function ChatPage() {
     ) => {
       setWaiting(true)
       let delivered = false // событие user всегда первое в стриме — значит, сообщение принято
+      let undone = false
+      const giveUp = () => {
+        if (undone) return
+        undone = true
+        onUndelivered?.()
+      }
       try {
         await api.streamChatMessage(sid, { text: value, attachmentIds, replyToMessageId: replyToMessageId ?? undefined }, {
           user: m => {
@@ -167,13 +184,15 @@ export function ChatPage() {
           },
           error: message => showToast(message, 'warning'),
         })
+        // сервер может отдать error внутри стрима, не прерывая запрос — пустая беседа не нужна
+        if (!delivered) giveUp()
       } catch (err) {
         console.error('Не удалось отправить сообщение', err)
         showToast(
           err instanceof api.ApiError && err.message !== '' ? err.message : 'BigDad сейчас не отвечает',
           'warning',
         )
-        if (!delivered) onUndelivered?.()
+        if (!delivered) giveUp()
       } finally {
         if (liveFrame.current !== null) {
           cancelAnimationFrame(liveFrame.current)
@@ -233,7 +252,10 @@ export function ChatPage() {
         setMessages([])
         navigate(`/chat?s=${res.session.id}`, true)
         pinnedToBottom.current = true
-        await runExchange(res.session.id, question, [], null, () => setText(question))
+        await runExchange(res.session.id, question, [], null, () => {
+          setText(question) // вопрос не пропал — его можно отправить вручную
+          discardSession(res.session.id)
+        })
       } catch (err) {
         console.error('Не удалось начать чат с BigDad', err)
         showToast(
@@ -243,7 +265,7 @@ export function ChatPage() {
         setText(question) // вопрос не пропал — его можно отправить вручную
       }
     })()
-  }, [activate, queuedDraft, runExchange, waiting, showToast])
+  }, [activate, discardSession, queuedDraft, runExchange, waiting, showToast])
 
   // живое обновление по WebSocket (ответ агента в другой вкладке)
   useEffect(() => {
@@ -252,10 +274,18 @@ export function ChatPage() {
       const incoming = Array.isArray(payload.messages) ? (payload.messages as ChatMessage[]) : []
       const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : null
       if (sessionId !== null) {
+        const incomingSession =
+          typeof payload.session === 'object' && payload.session !== null
+            ? (payload.session as Partial<ChatSession> & { id: string })
+            : null
         setSessions(prev => {
-          const known = prev.some(s => s.id === sessionId)
-          if (known || typeof payload.session !== 'object' || payload.session === null) return prev
-          return [payload.session as ChatSession, ...prev]
+          const next =
+            incomingSession === null
+              ? prev
+              : prev.some(s => s.id === sessionId)
+                ? prev.map(s => (s.id === sessionId ? { ...s, ...incomingSession } : s))
+                : ([{ ...incomingSession, id: sessionId } as ChatSession, ...prev])
+          return [...next].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
         })
       }
       if (sessionId !== null && sessionId === activeId && incoming.length > 0) {
@@ -351,15 +381,20 @@ export function ChatPage() {
     setWaiting(true)
     try {
       let sid = activeId
+      let createdSid: string | null = null
       if (sid === null) {
         const res = await api.createChatSession({})
         sid = res.session.id
+        createdSid = sid
         setSessions(prev => [res.session, ...prev.filter(s => s.id !== sid)])
         activate(sid)
         setMessages([])
         navigate(`/chat?s=${sid}`, true)
       }
-      await runExchange(sid, value, attachmentIds, replyToMessageId, restore)
+      await runExchange(sid, value, attachmentIds, replyToMessageId, () => {
+        restore()
+        if (createdSid !== null) discardSession(createdSid)
+      })
     } catch (err) {
       // не удалось даже создать сессию — сообщение не ушло
       console.error('Не удалось отправить сообщение', err)

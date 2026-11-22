@@ -1,11 +1,11 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import * as api from '../api'
 import { formatShort, liveSla, relativeTime, shortName, slaBigValue } from '../format'
 import { navigate } from '../router'
 import { useApp } from '../store'
 import type { FreezeRequest } from '../store'
-import type { AiAlternative, Card, Comment, HistoryEvent, IncidentDetail } from '../types'
+import type { AiAlternative, AiDetail, Card, Comment, HistoryEvent, IncidentDetail } from '../types'
 import { ArrowRightIcon, Avatar, Button, CloseIcon, CommentIcon, LinkIcon, Markdown, Modal, RefreshIcon, Select, SeverityBadge, SlaChip, SnowflakeIcon, SparkIcon, StatusPill, stringOptions, Textarea, TeamIcon } from '../ui'
 
 const HISTORY_TEXT: Record<string, string> = {
@@ -84,6 +84,7 @@ export function IncidentPanel() {
   const [aiBusy, setAiBusy] = useState(false)
   const card = id !== null ? state.cards.get(id) ?? null : null
 
+  const historyTimer = useRef<number | null>(null)
   useEffect(() => {
     if (id === null) {
       setDetail(null)
@@ -107,12 +108,31 @@ export function IncidentPanel() {
     })()
     const onComment = (e: Event) => {
       const comment = (e as CustomEvent<Comment>).detail
-      if (comment.incidentId === id) setComments(prev => [...prev, comment])
+      if (comment.incidentId !== id) return
+      // REST-ответ и WebSocket-событие приходят для одного комментария — не дублируем
+      setComments(prev => (prev.some(c => c.id === comment.id) ? prev : [...prev, comment]))
+    }
+    const onIncidentChanged = () => {
+      if (historyTimer.current !== null) window.clearTimeout(historyTimer.current)
+      historyTimer.current = window.setTimeout(() => {
+        historyTimer.current = null
+        void api.fetchHistory(id).then(setHistory).catch(err => console.error('Не удалось обновить историю', err))
+      }, 120)
+    }
+    const onAiUpdated = (e: Event) => {
+      const payload = (e as CustomEvent<{ incidentId: string; ai: AiDetail | null }>).detail
+      if (payload.incidentId !== id) return
+      setDetail(prev => (prev === null ? prev : { ...prev, ai: payload.ai }))
     }
     window.addEventListener('radar:comment', onComment)
+    window.addEventListener('radar:incident-changed', onIncidentChanged)
+    window.addEventListener('radar:incident-ai', onAiUpdated)
     return () => {
       cancelled = true
+      if (historyTimer.current !== null) window.clearTimeout(historyTimer.current)
       window.removeEventListener('radar:comment', onComment)
+      window.removeEventListener('radar:incident-changed', onIncidentChanged)
+      window.removeEventListener('radar:incident-ai', onAiUpdated)
     }
   }, [id, showToast])
 
@@ -130,7 +150,7 @@ export function IncidentPanel() {
     if (text === '') return
     try {
       const created = await api.addComment(card.id, text)
-      setComments(prev => [...prev, created])
+      setComments(prev => (prev.some(c => c.id === created.id) ? prev : [...prev, created]))
       setCommentText('')
       setCommentOpen(false)
     } catch (err) {
@@ -331,29 +351,37 @@ export function IncidentPanel() {
               </button>
             </div>
             {!aiEnabled && <p className="bigdad__offnote">BigDad не подключён — ИИ-анализ недоступен</p>}
-            {ai.summary !== null && <Markdown className="bigdad__text" text={ai.summary} />}
+            {ai.summary !== null && (
+              <section className="bigdad__section">
+                <p className="bigdad__label">Разбор ситуации</p>
+                <Markdown className="bigdad__text" text={ai.summary} />
+              </section>
+            )}
             {ai.riskScore !== null && (
-              <>
+              <section className="bigdad__section">
                 <div className="bigdad__risk">
-                  <span>Риск эскалации</span>
-                  <b>{ai.riskScore} / 100</b>
+                  <span className="bigdad__label">Риск эскалации</span>
+                  <b className={`bigdad__score ${ai.riskScore >= 70 ? 'bigdad__score--high' : ai.riskScore >= 40 ? 'bigdad__score--mid' : ''}`}>
+                    {ai.riskScore}<small>/100</small>
+                  </b>
                 </div>
                 <div className="riskbar">
                   <span className="riskbar__fill" style={{ width: `${Math.min(100, ai.riskScore)}%` }} />
                 </div>
                 {ai.riskReason !== null && <Markdown className="bigdad__note" text={ai.riskReason} />}
-              </>
+              </section>
             )}
             {ai.recommendedGroup !== null && (
-              <div className="bigdad__team">
-                <span className="bigdad__icon">
-                  <SparkIcon size={15} />
+              <section className="bigdad__section bigdad__team">
+                <span className="bigdad__team-icon">
+                  <TeamIcon size={16} />
                 </span>
                 <div>
-                  <b>Кому передать: {ai.recommendedGroup}</b>
+                  <p className="bigdad__label">Рекомендация BigDad</p>
+                  <b>{ai.recommendedGroup}</b>
                   {ai.recommendedReason !== null && <Markdown text={ai.recommendedReason} />}
                 </div>
-              </div>
+              </section>
             )}
             {aiEnabled && (
               <div className="bigdad__reply">

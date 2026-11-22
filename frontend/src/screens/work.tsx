@@ -108,26 +108,33 @@ function IncidentDetailBox({ detail, card, actions }: { detail: IncidentDetail |
             <span className="bigdad__icon">
               <SparkIcon size={17} />
             </span>
-            <div>
+            <div className="bigdad__headtext">
               <p className="bigdad__title">BigDad · ИИ-ассистент</p>
-              <p className="bigdad__sub">обновлено {relativeTime(card.updatedAt, state.now)}</p>
+              <p className="bigdad__sub">анализ инцидента · обновлено {relativeTime(card.updatedAt, state.now)}</p>
             </div>
             <span className="bigdad__refresh">
               <RefreshIcon size={14} />
             </span>
           </div>
           {!aiEnabled && <p className="bigdad__offnote">BigDad не подключён — ИИ-анализ недоступен</p>}
-          {ai.summary !== null && <Markdown className="bigdad__text" text={ai.summary} />}
+          {ai.summary !== null && (
+            <section className="bigdad__section">
+              <p className="bigdad__label">Разбор ситуации</p>
+              <Markdown className="bigdad__text" text={ai.summary} />
+            </section>
+          )}
           {ai.riskScore !== null && (
-            <>
+            <section className="bigdad__section">
               <div className="bigdad__risk">
-                <span>Риск эскалации</span>
-                <b>{ai.riskScore} / 100</b>
+                <span className="bigdad__label">Риск эскалации</span>
+                <b className={`bigdad__score ${ai.riskScore >= 70 ? 'bigdad__score--high' : ai.riskScore >= 40 ? 'bigdad__score--mid' : ''}`}>
+                  {ai.riskScore}<small>/100</small>
+                </b>
               </div>
               <div className="riskbar">
                 <span className="riskbar__fill" style={{ width: `${Math.min(100, ai.riskScore)}%` }} />
               </div>
-            </>
+            </section>
           )}
         </div>
       )}
@@ -184,6 +191,9 @@ export function DevPage() {
 
   useEffect(() => {
     void reload()
+    const onChange = () => void reload()
+    window.addEventListener('radar:incident-changed', onChange)
+    return () => window.removeEventListener('radar:incident-changed', onChange)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -193,16 +203,22 @@ export function DevPage() {
       return
     }
     let cancelled = false
-    void (async () => {
-      try {
-        const d = await api.fetchIncident(selectedId)
-        if (!cancelled) setDetail(d)
-      } catch (err) {
-        console.error('Не удалось загрузить инцидент', err)
-      }
-    })()
+    const loadDetail = () => {
+      void (async () => {
+        try {
+          const d = await api.fetchIncident(selectedId)
+          if (!cancelled) setDetail(d)
+        } catch (err) {
+          console.error('Не удалось загрузить инцидент', err)
+        }
+      })()
+    }
+    loadDetail()
+    const onChange = () => loadDetail()
+    window.addEventListener('radar:incident-changed', onChange)
     return () => {
       cancelled = true
+      window.removeEventListener('radar:incident-changed', onChange)
     }
   }, [selectedId])
 
@@ -432,6 +448,9 @@ export function QaPage() {
 
   useEffect(() => {
     void reload()
+    const onChange = () => void reload()
+    window.addEventListener('radar:incident-changed', onChange)
+    return () => window.removeEventListener('radar:incident-changed', onChange)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -441,16 +460,22 @@ export function QaPage() {
       return
     }
     let cancelled = false
-    void (async () => {
-      try {
-        const d = await api.fetchIncident(selectedId)
-        if (!cancelled) setDetail(d)
-      } catch (err) {
-        console.error('Не удалось загрузить инцидент', err)
-      }
-    })()
+    const loadDetail = () => {
+      void (async () => {
+        try {
+          const d = await api.fetchIncident(selectedId)
+          if (!cancelled) setDetail(d)
+        } catch (err) {
+          console.error('Не удалось загрузить инцидент', err)
+        }
+      })()
+    }
+    loadDetail()
+    const onChange = () => loadDetail()
+    window.addEventListener('radar:incident-changed', onChange)
     return () => {
       cancelled = true
+      window.removeEventListener('radar:incident-changed', onChange)
     }
   }, [selectedId])
 

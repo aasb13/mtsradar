@@ -107,12 +107,31 @@ export function Avatar({ name, size = 'md', tone = 'blue' }: { name?: string | n
 
 // ---------------- звёзды рейтинга ----------------
 
+function StarGlyph({ filled, size }: { filled: boolean; size: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill={filled ? 'currentColor' : 'none'}
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="m12 4 2.2 4.9 5.3.6-3.9 3.6 1 5.2L12 15.6l-4.6 2.7 1-5.2L4.5 9.5l5.3-.6L12 4Z" />
+    </svg>
+  )
+}
+
+/** Целые звёзды: 4.67 показывает 4 закрашенных — счёт звёзд должен читаться глазами. */
 export function StarRating({ value, size = 15 }: { value: number; size?: number }) {
   return (
     <span className="stars" title={`${value} из 5`}>
       {[1, 2, 3, 4, 5].map(i => (
-        <span key={i} className={`stars__star ${i <= Math.round(value) ? 'stars__star--on' : ''}`}>
-          <StarIcon size={size} />
+        <span key={i} className={`stars__star ${i <= Math.floor(value) ? 'stars__star--on' : ''}`}>
+          <StarGlyph filled={i <= Math.floor(value)} size={size} />
         </span>
       ))}
     </span>
@@ -134,7 +153,7 @@ export function StarPicker({ value, onChange }: { value: number; onChange: (v: n
           onClick={() => onChange(i)}
           aria-label={`${i} из 5`}
         >
-          <StarIcon size={24} />
+          <StarGlyph filled={i <= shown} size={24} />
         </button>
       ))}
     </span>
