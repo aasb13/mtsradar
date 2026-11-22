@@ -196,7 +196,7 @@ export function priorityMeta(priorityId: number): { label: string; tone: 'critic
   }
 }
 
-/** Колонки «Ваших инцидентов» = уровни приоритета (кейс: группы 4→1). */
+/** Колонки «Групп внимания» = уровни приоритета (кейс: группы 4→1). */
 export function levelTitle(priorityId: number): string {
   return `${priorityId} уровень`
 }
