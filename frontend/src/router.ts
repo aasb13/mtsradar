@@ -1,42 +1,38 @@
 import { useEffect, useState } from 'react'
 
 /**
- * Минимальный hash-роутер без зависимостей. Путь вида #/kanban;
- * navigate() дописывает историю браузера, replace() заменяет запись.
- * Query части (#/chat?s=…) отделяются от пути: useRoute видит только путь.
+ * Минимальный history-роутер без зависимостей: пути вида /kanban меняются через
+ * History API. navigate() дописывает историю браузера, replace() заменяет запись;
+ * оба сами диспатчат popstate, т.к. pushState/replaceState его не создают.
+ * Query части (/chat?s=…) отделяются от пути: useRoute видит только путь.
  */
 
 export function currentPath(): string {
-  const raw = window.location.hash.replace(/^#/, '')
-  const path = raw.split('?')[0]
-  return path === '' ? '/' : path
+  return window.location.pathname
 }
 
-/** Query из hash-пути (#/chat?s=ID) — для экранов, которые открывают с параметром. */
+/** Query из URL (/chat?s=ID) — для экранов, которые открывают с параметром. */
 export function routeQuery(): URLSearchParams {
-  const raw = window.location.hash.replace(/^#/, '')
-  const idx = raw.indexOf('?')
-  return new URLSearchParams(idx === -1 ? '' : raw.slice(idx + 1))
+  return new URLSearchParams(window.location.search)
 }
 
 export function navigate(path: string, replace = false): void {
-  const target = `#${path}`
-  if (window.location.hash === target) return
+  const target = path.startsWith('/') ? path : `/${path}`
+  if (`${window.location.pathname}${window.location.search}` === target) return
   if (replace) {
-    const url = `${window.location.pathname}${window.location.search}${target}`
-    window.history.replaceState(null, '', url)
-    window.dispatchEvent(new HashChangeEvent('hashchange'))
+    window.history.replaceState(null, '', target)
   } else {
-    window.location.hash = target
+    window.history.pushState(null, '', target)
   }
+  window.dispatchEvent(new PopStateEvent('popstate'))
 }
 
 export function useRoute(): string {
   const [path, setPath] = useState(currentPath)
   useEffect(() => {
     const onChange = () => setPath(currentPath())
-    window.addEventListener('hashchange', onChange)
-    return () => window.removeEventListener('hashchange', onChange)
+    window.addEventListener('popstate', onChange)
+    return () => window.removeEventListener('popstate', onChange)
   }, [])
   return path
 }

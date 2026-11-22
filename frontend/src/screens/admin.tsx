@@ -1216,7 +1216,7 @@ export function AdminUsersPage() {
 /** Ссылка собирается на клиенте (бэкенд не знает свой внешний адрес). Роль в ссылке —
  * только для подсказки на форме регистрации: настоящая роль лежит в токене на сервере. */
 function inviteLink(invite: Invite): string {
-  return `${window.location.origin}${window.location.pathname}#/register?invite=${invite.token}&role=${invite.role}`
+  return `${window.location.origin}/register?invite=${invite.token}&role=${invite.role}`
 }
 
 function InvitesSection() {

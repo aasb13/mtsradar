@@ -35,7 +35,7 @@ function Logo() {
   return (
     <a
       className="logo"
-      href="#/"
+      href="/"
       onClick={e => {
         e.preventDefault()
         navigate('/')
@@ -252,7 +252,7 @@ export function Header() {
           <a
             key={item.path}
             className={`nav__link ${route === item.path || (item.path === '/admin' && route.startsWith('/admin') && !item.path.includes('/')) ? 'nav__link--active' : ''}`}
-            href={`#${item.path}`}
+            href={item.path}
             onClick={e => {
               e.preventDefault()
               navigate(item.path)

@@ -43,7 +43,7 @@ export function ChatPage() {
   const fileRef = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const draftRef = useRef<{ incidentId: string; text: string } | null>(null)
-  // зеркало activeId: navigate dispatch'ит hashchange до re-render, state туда опаздывает
+  // зеркало activeId: navigate dispatch'ит popstate до re-render, state туда опаздывает
   const activeIdRef = useRef<string | null>(null)
   const activate = useCallback((id: string | null) => {
     activeIdRef.current = id
@@ -140,7 +140,7 @@ export function ChatPage() {
       const q = routeQuery()
       const sid = q.get('s')
       if (sid !== null) {
-        // navigate сам dispatch'ит hashchange; перезагрузка открытой сессии стёрла бы стрим
+        // navigate сам dispatch'ит popstate; перезагрузка открытой сессии стёрла бы стрим
         if (sid !== activeIdRef.current) void openSession(sid, replaceUrl)
         return
       }
@@ -160,9 +160,9 @@ export function ChatPage() {
         applyQuery(true)
       }
     })()
-    const onHash = () => applyQuery(false)
-    window.addEventListener('hashchange', onHash)
-    return () => window.removeEventListener('hashchange', onHash)
+    const onRoute = () => applyQuery(false)
+    window.addEventListener('popstate', onRoute)
+    return () => window.removeEventListener('popstate', onRoute)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

@@ -119,7 +119,7 @@ export function LoginPage() {
             </span>
             Запомнить меня
           </button>
-          <a className="auth__link" href="#/login" onClick={e => e.preventDefault()}>
+          <a className="auth__link" href="/login" onClick={e => e.preventDefault()}>
             Забыли пароль?
           </a>
         </div>
@@ -130,7 +130,7 @@ export function LoginPage() {
       <p className="auth__alt">
         Нет аккаунта?{' '}
         <a
-          href="#/register"
+          href="/register"
           onClick={e => {
             e.preventDefault()
             navigate('/register')
@@ -155,7 +155,7 @@ export function RegisterPage() {
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  // режим приглашения: ссылка вида /#/register?invite=<токен> (&role= — только для подсказки,
+  // режим приглашения: ссылка вида /register?invite=<токен> (&role= — только для подсказки,
   // настоящая роль хранится в токене на сервере и не может быть повышена через URL)
   const [invite] = useState(() => {
     const query = routeQuery()
@@ -253,7 +253,7 @@ export function RegisterPage() {
       <p className="auth__alt">
         Уже есть аккаунт?{' '}
         <a
-          href="#/login"
+          href="/login"
           onClick={e => {
             e.preventDefault()
             navigate('/login')

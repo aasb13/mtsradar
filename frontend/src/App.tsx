@@ -32,8 +32,11 @@ function Screens() {
   const { state, dispatch } = useApp()
   const route = useRoute()
 
-  // неавторизованный — на вход; авторизованный — на свой главный экран
+  // неавторизованный — на вход; авторизованный — на свой главный экран.
+  // пока сессия проверяется, адрес не трогаем: иначе прямой заход по ссылке
+  // вида /stats улетал бы на главную раньше восстановления входа
   useEffect(() => {
+    if (state.authChecking) return
     if (state.user === null) {
       if (route !== '/login' && route !== '/register' && route !== '/pending') navigate('/login', true)
       return
@@ -41,7 +44,7 @@ function Screens() {
     if (route === '/login' || route === '/register' || route === '/pending') {
       navigate(HOME_BY_ROLE[state.user.role], true)
     }
-  }, [state.user, route])
+  }, [state.user, state.authChecking, route])
 
   // Esc закрывает панель инцидента
   useEffect(() => {
