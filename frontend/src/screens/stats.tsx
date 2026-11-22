@@ -5,9 +5,20 @@ import { useApp } from '../store'
 import { downloadExport, fetchRatingLeaderboard, fetchTeamDescriptions, refreshTeamDescriptions } from '../api'
 import { PRIORITY_SLA_HOURS, ROLE_LABELS } from '../types'
 import type { RatingLeaderboardItem, TeamAiDescription } from '../types'
-import { Avatar, Button, DownloadIcon, Markdown, SeverityBadge, SparkIcon, StarRating } from '../ui'
+import { Avatar, Button, ChevronDownIcon, DownloadIcon, Markdown, SeverityBadge, SparkIcon, StarRating } from '../ui'
 
 type Period = 'week' | 'month' | 'quarter'
+
+// сортировка таблицы «Рейтинг сотрудников»: клик по шапке меняет ключ, повторный — направление
+type RatingSortKey = 'fullName' | 'role' | 'team' | 'average' | 'count'
+
+const RATING_SORTS: { key: RatingSortKey; label: string }[] = [
+  { key: 'fullName', label: 'Сотрудник' },
+  { key: 'role', label: 'Роль' },
+  { key: 'team', label: 'Команда' },
+  { key: 'average', label: 'Оценка' },
+  { key: 'count', label: 'Голоса' },
+]
 
 const PERIOD_DAYS: Record<Period, number> = { week: 7, month: 30, quarter: 90 }
 
@@ -69,6 +80,32 @@ export function StatsPage() {
   const [aiBusy, setAiBusy] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
   const [leaderboard, setLeaderboard] = useState<RatingLeaderboardItem[]>([])
+  const [sortKey, setSortKey] = useState<RatingSortKey>('average')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+
+  const sortedLeaderboard = useMemo(() => {
+    const dir = sortDir === 'asc' ? 1 : -1
+    return [...leaderboard].sort((a, b) => {
+      const va = a[sortKey]
+      const vb = b[sortKey]
+      if (typeof va === 'string' || typeof vb === 'string') {
+        return String(va ?? '').localeCompare(String(vb ?? ''), 'ru') * dir
+      }
+      // без оценок — всегда в конце, независимо от направления
+      if (va === null) return 1
+      if (vb === null) return -1
+      return (va - vb) * dir
+    })
+  }, [leaderboard, sortKey, sortDir])
+
+  const toggleRatingSort = (key: RatingSortKey) => {
+    if (sortKey === key) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
+      return
+    }
+    setSortKey(key)
+    setSortDir(key === 'fullName' || key === 'role' || key === 'team' ? 'asc' : 'desc')
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -439,15 +476,24 @@ export function StatsPage() {
         <table className="table">
           <thead>
             <tr>
-              <th>Сотрудник</th>
-              <th>Роль</th>
-              <th>Команда</th>
-              <th>Оценка</th>
-              <th>Голоса</th>
+              {RATING_SORTS.map(col => (
+                <th key={col.key}>
+                  <button
+                    type="button"
+                    className={`th-sort ${sortKey === col.key ? 'th-sort--active' : ''}`}
+                    onClick={() => toggleRatingSort(col.key)}
+                  >
+                    {col.label}
+                    <span className={`th-sort__arrow ${sortKey === col.key && sortDir === 'asc' ? 'th-sort__arrow--asc' : ''}`}>
+                      <ChevronDownIcon size={12} />
+                    </span>
+                  </button>
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
-            {leaderboard.map(row => (
+            {sortedLeaderboard.map(row => (
               <tr key={row.userId} className="rowlink" onClick={() => navigate(`/profile/${row.userId}`)} title="Открыть профиль">
                 <td>
                   <span className="memberrow">

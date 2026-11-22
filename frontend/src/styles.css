@@ -4816,3 +4816,40 @@ body {
   color: var(--text-2);
   overflow-wrap: anywhere;
 }
+
+/* сортируемая шапка таблицы рейтинга */
+
+.th-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.th-sort:hover {
+  color: var(--text);
+}
+
+.th-sort--active {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.th-sort__arrow {
+  display: inline-flex;
+  visibility: hidden;
+}
+
+.th-sort--active .th-sort__arrow {
+  visibility: visible;
+}
+
+.th-sort__arrow--asc svg {
+  transform: rotate(180deg);
+}
