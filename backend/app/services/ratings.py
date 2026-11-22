@@ -16,10 +16,7 @@ async def aggregate(user_id: str) -> dict[str, Any]:
     for s in scores:
         distribution[s] += 1
     author_ids = {d["authorUserId"] for d in docs if not d.get("anonymous")}
-    authors = {
-        u["_id"]: u
-        async for u in get_db().users.find({"_id": {"$in": list(author_ids)}})
-    }
+    authors = {u["_id"]: u async for u in get_db().users.find({"_id": {"$in": list(author_ids)}})}
     items = [
         {
             "id": d["_id"],

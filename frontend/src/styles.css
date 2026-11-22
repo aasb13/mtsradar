@@ -4615,6 +4615,21 @@ body {
   border-bottom: 0;
 }
 
+.teamroster__row--link {
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s ease;
+}
+
+.teamroster__row--link:hover {
+  background: var(--panel);
+}
+
+.teamroster__row--link:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
+
 .teamroster__id {
   flex: 1;
   min-width: 0;

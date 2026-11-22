@@ -6,6 +6,7 @@
 из справочника, но остаётся в истории инцидентов.
 """
 
+import re
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -48,6 +49,14 @@ async def _alive_team(name: str) -> dict[str, Any] | None:
 
 async def _publish_changed() -> None:
     await rabbit.publish("team.changed", {})
+
+
+def _split_executor(value: str) -> tuple[str, str | None]:
+    """Исполнитель ITSM «Имя (login)» -> («Имя», «login»)."""
+    match = re.fullmatch(r"\s*(.*?)\s*\(([^()]+)\)\s*", value)
+    if match:
+        return match.group(1).strip(), match.group(2).strip()
+    return value.strip(), None
 
 
 @router.post("", status_code=201)
@@ -118,8 +127,41 @@ async def profile(name: str, _: StaffUser) -> dict[str, Any]:
     active_docs = [d for d in docs if flags(d["data"], s).is_active]
     done_docs = [d for d in docs if not flags(d["data"], s).is_active]
 
-    accounts = [u async for u in db.users.find({"team": team_name, "deletedAt": None}).sort("fullName", 1)]
+    # Логины исполнителей в инцидентах команды. Аккаунт может числиться в другой
+    # команде, но в профиле этой команды он всё равно должен быть реальным
+    # участником с переходом в свой профиль, а не безымянной заглушкой.
+    executor_logins: set[str] = set()
+    for d in docs:
+        login = d["data"].get("assignedEmployeeLogin")
+        if isinstance(login, str) and login.strip():
+            executor_logins.add(login.strip())
+        raw = d["data"].get("assignedEmployee")
+        if isinstance(raw, str):
+            _, parsed_login = _split_executor(raw)
+            if parsed_login:
+                executor_logins.add(parsed_login)
+
+    accounts = [
+        u
+        async for u in db.users.find(
+            {
+                "deletedAt": None,
+                "$or": [{"team": team_name}, {"itsmLogin": {"$in": sorted(executor_logins)}}],
+            }
+        )
+    ]
+    # пользователь может подойти под оба условия — оставляем его один раз
+    accounts = list({u["_id"]: u for u in accounts}.values())
+    accounts.sort(key=lambda u: u.get("fullName") or u.get("email") or "")
     account_ids = [u["_id"] for u in accounts]
+    accounts_by_login = {
+        u["itsmLogin"].strip().casefold(): u
+        for u in accounts
+        if isinstance(u.get("itsmLogin"), str) and u["itsmLogin"].strip()
+    }
+    accounts_by_name = {
+        (u.get("fullName") or u.get("email") or "").strip().casefold(): u for u in accounts
+    }
     scores_by_user: dict[str, list[int]] = {uid: [] for uid in account_ids}
     async for r in db.ratings.find({"targetUserId": {"$in": account_ids}}):
         scores_by_user.setdefault(r["targetUserId"], []).append(r["score"])
@@ -127,10 +169,18 @@ async def profile(name: str, _: StaffUser) -> dict[str, Any]:
     def belongs(d: dict[str, Any], user: dict[str, Any]) -> bool:
         data = d["data"]
         names = {n for n in (user.get("fullName"), user.get("email")) if isinstance(n, str) and n != ""}
+        raw = data.get("assignedEmployee")
+        raw_variants: set[str] = set()
+        if isinstance(raw, str):
+            raw_variants.add(raw)
+            parsed_name, parsed_login = _split_executor(raw)
+            raw_variants.add(parsed_name)
+            if parsed_login:
+                raw_variants.add(parsed_login)
         login = user.get("itsmLogin")
         return (
             (isinstance(login, str) and login != "" and data.get("assignedEmployeeLogin") == login)
-            or data.get("assignedEmployee") in names
+            or bool(names & raw_variants)
             or user["_id"] in (d.get("members") or [])
         )
 
@@ -151,13 +201,20 @@ async def profile(name: str, _: StaffUser) -> dict[str, Any]:
             }
         )
 
-    # Исполнители из ITSM, у которых нет аккаунта в системе: их names видим в инцидентах.
-    account_names = {m["name"] for m in members}
+    # Исполнители ITSM без аккаунта. Если аккаунт есть (в том числе в другой
+    # команде), он уже добавлен выше как участник со ссылкой на профиль — дубль
+    # в виде заглушки не показываем.
     executors: list[str] = []
     for d in docs:
-        executor = d["data"].get("assignedEmployee")
-        if isinstance(executor, str) and executor != "" and executor not in account_names and executor not in executors:
-            executors.append(executor)
+        raw = d["data"].get("assignedEmployee")
+        if not isinstance(raw, str) or raw == "" or raw in executors:
+            continue
+        name, parsed_login = _split_executor(raw)
+        login = parsed_login or d["data"].get("assignedEmployeeLogin")
+        known_account = accounts_by_login.get(login.strip().casefold()) if isinstance(login, str) and login.strip() else None
+        if known_account is not None or accounts_by_name.get(name.casefold()) is not None:
+            continue
+        executors.append(raw)
     for executor in executors:
         members.append(
             {

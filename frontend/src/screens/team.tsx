@@ -16,20 +16,36 @@ function personCount(n: number): string {
 }
 
 function MemberRow({ member }: { member: TeamMember }) {
+  const profileHref = member.id === null ? null : `/profile/${member.id}`
   const openProfile = () => {
-    if (member.id === null) return
-    navigate(`/profile/${member.id}`)
+    if (profileHref === null) return
+    navigate(profileHref)
   }
   return (
-    <div className="memberrow teamroster__row">
+    <div
+      className={`memberrow teamroster__row${profileHref === null ? '' : ' teamroster__row--link'}`}
+      role={profileHref === null ? undefined : 'link'}
+      tabIndex={profileHref === null ? undefined : 0}
+      title={profileHref === null ? undefined : 'Открыть профиль'}
+      onClick={profileHref === null ? undefined : openProfile}
+      onKeyDown={
+        profileHref === null
+          ? undefined
+          : e => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                openProfile()
+              }
+            }
+      }
+    >
       <Avatar size="sm" tone={member.kind === 'account' ? 'blue' : 'ghost'} name={member.name} />
       <div className="teamroster__id">
-        {member.id === null ? (
+        {profileHref === null ? (
           <span>{member.name}</span>
         ) : (
           <a
-            href={`/profile/${member.id}`}
-            title="Открыть профиль"
+            href={profileHref}
             onClick={e => {
               e.preventDefault()
               openProfile()
