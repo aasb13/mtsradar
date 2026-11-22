@@ -100,7 +100,7 @@ function SearchBox({ compact, open, onOpenChange }: { compact: boolean; open: bo
 }
 
 function BellMenu({ onClose }: { onClose: () => void }) {
-  const { state, dispatch, showToast } = useApp()
+  const { state, dispatch, showToast, openIncident } = useApp()
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   // список живёт только в глобальном store: WS и отметки прочитанным меняют его сразу
@@ -136,9 +136,8 @@ function BellMenu({ onClose }: { onClose: () => void }) {
     }
     if (notification.incidentId !== null && notification.incidentId !== undefined) {
       onClose()
-      // панель инцидента есть только у координатора и администратора — им клик ведёт на канбан
-      if (state.user?.role === 'coordinator' || state.user?.role === 'admin') navigate('/')
-      dispatch({ type: 'OPEN_PANEL', id: notification.incidentId })
+      // панель инцидента есть только у координатора и администратора
+      if (state.user?.role === 'coordinator' || state.user?.role === 'admin') openIncident(notification.incidentId)
       return
     }
     onClose()
@@ -360,7 +359,7 @@ export function Header() {
 const TOAST_EXIT_MS = 220
 
 export function ToastStack() {
-  const { state, dispatch } = useApp()
+  const { state, dispatch, openIncident } = useApp()
   useEffect(() => {
     if (state.toasts.length === 0) return
     const timers = state.toasts.flatMap(t => {
@@ -376,11 +375,10 @@ export function ToastStack() {
     }
   }, [state.toasts, dispatch])
   const isStaff = state.user?.role === 'coordinator' || state.user?.role === 'admin'
-  const openIncident = (toast: ToastItem) => {
+  const openToast = (toast: ToastItem) => {
     if (toast.incidentId === undefined || !isStaff) return
     dispatch({ type: 'DISMISS_TOAST', key: toast.key })
-    navigate('/')
-    dispatch({ type: 'OPEN_PANEL', id: toast.incidentId })
+    openIncident(toast.incidentId)
   }
   return (
     <div className="toasts">
@@ -390,7 +388,7 @@ export function ToastStack() {
           <div
             key={t.key}
             className={`toast toast--${t.tone} ${clickable ? 'toast--link' : ''} ${t.leavingAt !== undefined ? 'toast--leaving' : ''}`}
-            onClick={clickable ? () => openIncident(t) : undefined}
+            onClick={clickable ? () => openToast(t) : undefined}
           >
             <span className={`toast__icon toast__icon--${t.tone}`}>
               {t.tone === 'success' ? <CheckCircleGlyph /> : <InfoGlyph />}

@@ -59,7 +59,7 @@ function CheckRow({ on, label, onToggle, children }: { on: boolean; label: strin
 }
 
 export function ProfilePage({ userId }: { userId?: string }) {
-  const { state, dispatch, showToast } = useApp()
+  const { state, dispatch, showToast, openIncident } = useApp()
   const user = state.user
   const [me, setMe] = useState<MeResponse | null>(null)
   const [meError, setMeError] = useState(false)
@@ -302,8 +302,7 @@ export function ProfilePage({ userId }: { userId?: string }) {
   // сотрудникам инцидент открывается в боковой панели; разработчик и тестировщик работают на своих экранах
   const openTask = (card: Card) => {
     if (user.role === 'coordinator' || user.role === 'admin') {
-      navigate('/')
-      dispatch({ type: 'OPEN_PANEL', id: card.id })
+      openIncident(card.id)
       return
     }
     navigate(user.role === 'developer' ? '/dev' : '/qa')

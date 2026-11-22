@@ -74,7 +74,7 @@ function descriptionOf(detail: IncidentDetail | null, meta: Record<string, unkno
 }
 
 export function IncidentPanel() {
-  const { state, dispatch, showToast, doAssign, doUnfreeze } = useApp()
+  const { state, dispatch, showToast, doAssign, doUnfreeze, closeIncident } = useApp()
   const id = state.panelId
   const [detail, setDetail] = useState<IncidentDetail | null>(null)
   const [history, setHistory] = useState<HistoryEvent[]>([])
@@ -82,7 +82,7 @@ export function IncidentPanel() {
   const [commentOpen, setCommentOpen] = useState(false)
   const [commentText, setCommentText] = useState('')
   const [aiBusy, setAiBusy] = useState(false)
-  const card = id !== null ? state.cards.get(id) ?? null : null
+  const card = id !== null ? state.cards.get(id) ?? (detail !== null && detail.id === id ? detail : null) : null
 
   const historyTimer = useRef<number | null>(null)
   useEffect(() => {
@@ -176,7 +176,7 @@ export function IncidentPanel() {
     navigate(`/chat?incident=${encodeURIComponent(card.id)}&draft=${encodeURIComponent(draft)}`)
   }
 
-  const close = () => dispatch({ type: 'OPEN_PANEL', id: null })
+  const close = closeIncident
 
   return (
     <div className="overlay" onMouseDown={e => e.target === e.currentTarget && close()}>

@@ -163,7 +163,7 @@ function IncidentsCard({
 }
 
 export function TeamProfilePage({ name }: { name: string }) {
-  const { state, dispatch } = useApp()
+  const { state, openIncident } = useApp()
   const [profile, setProfile] = useState<TeamProfileResponse | null>(null)
   const [error, setError] = useState<'notFound' | 'server' | null>(null)
   const [retryKey, setRetryKey] = useState(0)
@@ -203,8 +203,7 @@ export function TeamProfilePage({ name }: { name: string }) {
       navigate('/qa')
       return
     }
-    navigate('/')
-    dispatch({ type: 'OPEN_PANEL', id: card.id })
+    openIncident(card.id)
   }
 
   if (error !== null) {

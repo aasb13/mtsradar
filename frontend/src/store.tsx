@@ -4,7 +4,7 @@ import * as api from './api'
 import { ApiError, clearTokens, getAccessToken, getRefreshToken, storeTokens } from './api'
 import { beepCritical } from './beep'
 import { FEED_TEXT, isUnassigned, pluralize } from './format'
-import { currentPath, incidentIdFromPath, incidentPath, navigate, nextIncidentPath } from './router'
+import { currentPath, incidentIdFromPath, incidentPath, incidentReturnPath, navigate, nextIncidentPath } from './router'
 import { connectSocket } from './ws'
 import type {
   Card,
@@ -430,13 +430,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const openIncident = useCallback((id: string) => {
+    const from = currentPath()
+    // уже открытая карточка: сохраняем экран, откуда пришли в неё в первый раз
+    const back = incidentIdFromPath(from) === null ? from : incidentReturnPath() ?? '/'
     dispatch({ type: 'OPEN_PANEL', id })
-    navigate(incidentPath(id))
+    navigate(incidentPath(id), false, { radarReturn: back })
   }, [])
 
   const closeIncident = useCallback(() => {
     dispatch({ type: 'OPEN_PANEL', id: null })
-    if (incidentIdFromPath(currentPath()) !== null) navigate('/')
+    navigate(incidentReturnPath() ?? '/', true)
   }, [])
 
   // тикающие часы для живых SLA-таймеров

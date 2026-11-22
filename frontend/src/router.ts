@@ -47,15 +47,21 @@ export function loginPath(next: string): string {
   return `/login?${NEXT_PARAM}=${encodeURIComponent(next)}`
 }
 
-export function navigate(path: string, replace = false): void {
+export function navigate(path: string, replace = false, state: unknown = null): void {
   const target = path.startsWith('/') ? path : `/${path}`
   if (`${window.location.pathname}${window.location.search}` === target) return
   if (replace) {
-    window.history.replaceState(null, '', target)
+    window.history.replaceState(state, '', target)
   } else {
-    window.history.pushState(null, '', target)
+    window.history.pushState(state, '', target)
   }
   window.dispatchEvent(new PopStateEvent('popstate'))
+}
+
+/** Экран, с которого открыли карточку: сюда возвращаем пользователя при закрытии. */
+export function incidentReturnPath(): string | null {
+  const state = window.history.state as { radarReturn?: unknown } | null
+  return typeof state?.radarReturn === 'string' && state.radarReturn.startsWith('/') ? state.radarReturn : null
 }
 
 export function useRoute(): string {
