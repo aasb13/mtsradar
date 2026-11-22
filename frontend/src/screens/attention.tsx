@@ -23,7 +23,7 @@ const STATUS_FILTER_LABELS: Record<StatusFilter, string> = {
 }
 
 function LevelCard({ card }: { card: Card }) {
-  const { dispatch } = useApp()
+  const { openIncident } = useApp()
   return (
     <div
       className="acard"
@@ -37,7 +37,7 @@ function LevelCard({ card }: { card: Card }) {
                 ? 'var(--yellow)'
                 : 'var(--gray)',
       }}
-      onClick={() => dispatch({ type: 'OPEN_PANEL', id: card.id })}
+      onClick={() => openIncident(card.id)}
     >
       <div className="acard__top">
         <span className="acard__id">#{card.id}</span>

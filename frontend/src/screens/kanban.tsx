@@ -127,7 +127,7 @@ export function KpiRow() {
 }
 
 export function CriticalBanner() {
-  const { state, dispatch, doAck } = useApp()
+  const { state, dispatch, doAck, openIncident } = useApp()
   const cards = [...state.cards.values()]
   const criticalId = state.unacknowledgedCritical.length > 0 ? state.unacknowledgedCritical[0] : null
   const card = criticalId !== null ? cards.find(c => c.id === criticalId) : undefined
@@ -136,10 +136,10 @@ export function CriticalBanner() {
   return (
     <div
       className="critbanner"
-      onClick={() => dispatch({ type: 'OPEN_PANEL', id: card.id })}
+      onClick={() => openIncident(card.id)}
       role="button"
       tabIndex={0}
-      onKeyDown={e => e.key === 'Enter' && dispatch({ type: 'OPEN_PANEL', id: card.id })}
+      onKeyDown={e => e.key === 'Enter' && openIncident(card.id)}
     >
       <div>
         <p className="critbanner__title">Критический инцидент {card.id} · {card.header ?? 'без названия'}</p>
@@ -153,7 +153,7 @@ export function CriticalBanner() {
           className="btn btn--white btn--sm"
           onClick={e => {
             e.stopPropagation()
-            dispatch({ type: 'OPEN_PANEL', id: card.id })
+            openIncident(card.id)
           }}
         >
           <EyeIcon size={15} />
@@ -192,7 +192,7 @@ export function IncidentCard({ card, draggable = false, onDragStart, onDragEnd }
   onDragStart?: () => void
   onDragEnd?: () => void
 }) {
-  const { state, dispatch } = useApp()
+  const { state, openIncident } = useApp()
   const frozen = card.freeze != null
   const critical = card.isCritical && card.isActive && !card.isResolved
   const overdue = !critical && card.sla.state === 'breached'
@@ -207,7 +207,7 @@ export function IncidentCard({ card, draggable = false, onDragStart, onDragEnd }
         onDragStart?.()
       }}
       onDragEnd={onDragEnd}
-      onClick={() => dispatch({ type: 'OPEN_PANEL', id: card.id })}
+      onClick={() => openIncident(card.id)}
     >
       <div className="icard__top">
         <span className="icard__id">{card.id}</span>

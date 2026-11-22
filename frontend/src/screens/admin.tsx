@@ -48,7 +48,7 @@ const INVITE_ROLE_OPTIONS = ROLE_OPTIONS.filter(o => o.key !== 'admin')
 type StatusTab = 'open' | 'all' | 'closed'
 
 export function AdminIncidentsPage() {
-  const { state, dispatch, showToast } = useApp()
+  const { state, dispatch, showToast, openIncident } = useApp()
   const [items, setItems] = useState<Card[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -186,7 +186,7 @@ export function AdminIncidentsPage() {
                 <tr
                   key={card.id}
                   className={`rowlink ${card.isCritical && card.isActive ? 'critrow' : ''}`}
-                  onClick={() => dispatch({ type: 'OPEN_PANEL', id: card.id })}
+                  onClick={() => openIncident(card.id)}
                 >
                   <td className="table__id">{card.id}</td>
                   <td className="table__title" style={{ maxWidth: 240 }}>{card.header ?? '—'}</td>
@@ -1586,7 +1586,7 @@ function InviteModal({ onClose, onInvited }: { onClose: () => void; onInvited: (
 // ---------------- завершённые ----------------
 
 export function AdminDonePage() {
-  const { state, showToast, dispatch } = useApp()
+  const { state, showToast, openIncident } = useApp()
   const [items, setItems] = useState<Card[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -1691,7 +1691,7 @@ export function AdminDonePage() {
                 const overDeadline =
                   card.deadline !== null && card.completionDate !== null && Date.parse(card.completionDate) > Date.parse(card.deadline)
                 return (
-                  <tr key={card.id} className="rowlink" onClick={() => dispatch({ type: 'OPEN_PANEL', id: card.id })}>
+                  <tr key={card.id} className="rowlink" onClick={() => openIncident(card.id)}>
                     <td className="table__id">{card.id}</td>
                     <td className="table__title" style={{ maxWidth: 260 }}>{card.header ?? '—'}</td>
                     <td>

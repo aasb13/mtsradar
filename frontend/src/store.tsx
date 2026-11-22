@@ -4,7 +4,7 @@ import * as api from './api'
 import { ApiError, clearTokens, getAccessToken, getRefreshToken, storeTokens } from './api'
 import { beepCritical } from './beep'
 import { FEED_TEXT, isUnassigned, pluralize } from './format'
-import { navigate } from './router'
+import { currentPath, incidentIdFromPath, incidentPath, navigate, nextIncidentPath } from './router'
 import { connectSocket } from './ws'
 import type {
   Card,
@@ -402,6 +402,9 @@ interface AppContextValue {
   doUnfreeze: (id: string) => Promise<boolean>
   /** Переименование продукта/команды: все инциденты со старым значением обновляются запросами. */
   doRenameDictItem: (field: 'products' | 'assignedGroups', from: string, to: string) => Promise<boolean>
+  /** Открыть карточку и записать её адрес в строку браузера, чтобы ссылкой можно было поделиться. */
+  openIncident: (id: string) => void
+  closeIncident: () => void
   showToast: (text: string, tone?: ToastItem['tone'], incidentId?: string) => void
 }
 
@@ -424,6 +427,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const toast: ToastItem = { key: `${Date.now()}|${Math.random()}|${text}`, tone, text, createdAt: Date.now() }
     if (incidentId !== undefined && incidentId !== '') toast.incidentId = incidentId
     dispatch({ type: 'ADD_TOAST', toast })
+  }, [])
+
+  const openIncident = useCallback((id: string) => {
+    dispatch({ type: 'OPEN_PANEL', id })
+    navigate(incidentPath(id))
+  }, [])
+
+  const closeIncident = useCallback(() => {
+    dispatch({ type: 'OPEN_PANEL', id: null })
+    if (incidentIdFromPath(currentPath()) !== null) navigate('/')
   }, [])
 
   // тикающие часы для живых SLA-таймеров
@@ -757,7 +770,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (pair: TokenPair, remember = true) => {
       storeTokens(pair.accessToken, pair.refreshToken, remember)
       await boot(pair.user)
-      navigate(pair.user.role === 'developer' ? '/dev' : pair.user.role === 'viewer' ? '/qa' : '/')
+      const next = nextIncidentPath()
+      navigate(next ?? (pair.user.role === 'developer' ? '/dev' : pair.user.role === 'viewer' ? '/qa' : '/'))
     },
     [boot],
   )
@@ -1017,9 +1031,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       doFreeze,
       doUnfreeze,
       doRenameDictItem,
+      openIncident,
+      closeIncident,
       showToast,
     }),
-    [state, login, loginWithPair, logout, register, refreshDashboard, refreshBoard, refreshStats, refreshDictionaries, doTransition, doAck, doAssign, doFreeze, doUnfreeze, doRenameDictItem, showToast],
+    [state, login, loginWithPair, logout, register, refreshDashboard, refreshBoard, refreshStats, refreshDictionaries, doTransition, doAck, doAssign, doFreeze, doUnfreeze, doRenameDictItem, openIncident, closeIncident, showToast],
   )
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>

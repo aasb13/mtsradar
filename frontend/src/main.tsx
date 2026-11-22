@@ -1,6 +1,7 @@
 import '@fontsource-variable/inter'
 import './styles.css'
 import './responsive.css'
+import './screen.css'
 import { createRoot } from 'react-dom/client'
 import App from './App'
 import { ErrorBoundary } from './screens/error'

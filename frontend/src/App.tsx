@@ -6,13 +6,14 @@ import { LoginPage, PendingPage, RegisterPage } from './screens/auth'
 import { KanbanPage } from './screens/kanban'
 import { AttentionPage } from './screens/attention'
 import { StatsPage } from './screens/stats'
+import { ScreenPage } from './screens/screen'
 import { ChatPage } from './screens/chat'
 import { AdminDonePage, AdminIncidentsPage, AdminProductsPage, AdminTeamsPage, AdminUsersPage } from './screens/admin'
 import { DevPage, QaPage } from './screens/work'
 import { ProfilePage } from './screens/profile'
 import { TeamProfilePage } from './screens/team'
 import { AssignModal, FreezeModal, IncidentPanel } from './screens/panel'
-import { navigate, useRoute } from './router'
+import { incidentIdFromPath, loginPath, navigate, nextIncidentPath, useRoute } from './router'
 import type { Role } from './types'
 import { Loading } from './ui'
 import { ErrorScreen } from './screens/error'
@@ -42,7 +43,7 @@ function decodePathPart(value: string): string {
 }
 
 function Screens() {
-  const { state, dispatch } = useApp()
+  const { state, dispatch, closeIncident } = useApp()
   const route = useRoute()
 
   // неавторизованный — на вход; авторизованный — на свой главный экран.
@@ -51,11 +52,14 @@ function Screens() {
   useEffect(() => {
     if (state.authChecking) return
     if (state.user === null) {
-      if (route !== '/login' && route !== '/register' && route !== '/pending') navigate('/login', true)
+      if (route !== '/login' && route !== '/register' && route !== '/pending') {
+        // ссылка на инцидент должна пережить вход: сохраняем её в адресе страницы входа
+        navigate(incidentIdFromPath(route) !== null ? loginPath(route) : '/login', true)
+      }
       return
     }
     if (route === '/login' || route === '/register' || route === '/pending') {
-      navigate(HOME_BY_ROLE[state.user.role], true)
+      navigate(nextIncidentPath() ?? HOME_BY_ROLE[state.user.role], true)
     }
     // чужой профиль разработчику не виден: его видимость ограничена своими инцидентами
     if (route.startsWith('/profile/') && state.user.role === 'developer' && route !== `/profile/${state.user.id}`) {
@@ -63,16 +67,29 @@ function Screens() {
     }
   }, [state.user, state.authChecking, route])
 
+  // адрес /incident/<id> — источник truth для открытой карточки: прямая ссылка,
+  // «назад» браузера и открытие карточки из списка приходят одним и тем же путём
+  useEffect(() => {
+    if (state.authChecking || state.user === null) return
+    const routeId = incidentIdFromPath(route)
+    const isStaff = state.user.role === 'coordinator' || state.user.role === 'admin'
+    if (!isStaff) {
+      if (state.panelId !== null) dispatch({ type: 'OPEN_PANEL', id: null })
+    } else if (routeId !== null && routeId !== state.panelId) {
+      dispatch({ type: 'OPEN_PANEL', id: routeId })
+    } else if (routeId === null && state.panelId !== null) {
+      dispatch({ type: 'OPEN_PANEL', id: null })
+    }
+  }, [route, state.user, state.authChecking, state.panelId, dispatch])
+
   // Esc закрывает панель инцидента
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && state.panelId !== null) {
-        dispatch({ type: 'OPEN_PANEL', id: null })
-      }
+      if (e.key === 'Escape' && state.panelId !== null) closeIncident()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [state.panelId, dispatch])
+  }, [state.panelId, closeIncident])
 
   if (state.user === null) {
     // сессия ещё проверяется — не показываем логин, чтобы страница не мигала
@@ -88,6 +105,9 @@ function Screens() {
   let screen: ReactNode
   if (user.role !== 'admin' && (route === '/admin' || route.startsWith('/admin/'))) {
     screen = <ErrorScreen code={403} />
+  } else if (incidentIdFromPath(route) !== null) {
+    // карточка открывается поверх доски; у остальных ролей — их рабочий экран
+    screen = isStaff ? <KanbanPage /> : user.role === 'developer' ? <DevPage /> : <QaPage />
   } else if (route === '/profile' || route.startsWith('/profile/')) {
     // /profile — свой профиль с настройками; /profile/<id> — чужой, только просмотр
     const otherId = route === '/profile' ? undefined : route.slice('/profile/'.length)
@@ -113,6 +133,9 @@ function Screens() {
       break
     case '/stats':
       screen = <StatsPage />
+      break
+    case '/screen':
+      screen = <ScreenPage />
       break
     case '/chat':
       screen = <ChatPage />
@@ -142,9 +165,10 @@ function Screens() {
       screen = <ErrorScreen code={404} />
   }
 
+  const isScreen = route === '/screen'
   return (
-    <div className="app">
-      <Header />
+    <div className={`app${isScreen ? ' app--screen' : ''}`}>
+      {!isScreen && <Header />}
       <main className="page">{screen}</main>
       {isStaff && <IncidentPanel />}
       {isStaff && <AssignModal />}
