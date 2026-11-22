@@ -183,6 +183,10 @@ export function TeamProfilePage({ name }: { name: string }) {
   }, [load, retryKey])
 
   const openTask = (card: Card) => {
+    if (state.user?.role === 'viewer') {
+      navigate('/qa')
+      return
+    }
     navigate('/')
     dispatch({ type: 'OPEN_PANEL', id: card.id })
   }

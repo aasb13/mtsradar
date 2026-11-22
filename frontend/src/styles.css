@@ -984,7 +984,7 @@ a {
 
 .sev--medium {
   background: var(--yellow);
-  color: var(--text);
+  color: #1d1d1f;
 }
 
 .sev--low {
@@ -1053,7 +1053,7 @@ a {
 
 .slachip--warn {
   background: var(--yellow);
-  color: var(--text);
+  color: #1d1d1f;
 }
 
 .slachip--done {
@@ -1129,7 +1129,7 @@ a {
 }
 
 .lvl__count {
-  background: rgba(255, 255, 255, 0.85);
+  background: var(--bg);
   color: var(--text);
   width: 28px;
   height: 28px;
