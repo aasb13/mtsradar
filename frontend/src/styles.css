@@ -3113,6 +3113,8 @@ a {
 .chat__feed {
   flex: 1;
   overflow-y: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
   padding: 18px 20px 6px;
   display: flex;
   flex-direction: column;
@@ -3143,6 +3145,20 @@ a {
   flex-direction: row-reverse;
 }
 
+/* пока BigDad печатает, заглушка и ответ занимают одну и ту же область:
+   текст не раздвигает пузырь по ширине и не дёргает ленту по горизонтали */
+.chat__row--live,
+.chat__row--thinking {
+  max-width: 100%;
+}
+
+.chat__row--live .bubble,
+.chat__row--thinking .bubble {
+  width: 100%;
+  max-width: 720px;
+  min-height: 68px;
+}
+
 .chat__ava {
   width: 30px;
   height: 30px;
@@ -3163,7 +3179,8 @@ a {
 /* markdown в ответах BigDad */
 .md {
   min-width: 0;
-  word-break: break-word;
+  overflow-wrap: anywhere;
+  word-break: normal;
 }
 
 .md p,
@@ -3974,6 +3991,12 @@ body {
 
 .chat__feed > * {
   animation: msg-in 0.2s ease-out backwards;
+}
+
+/* растущий ответ не должен каждый кадр смещаться анимацией появления */
+.chat__feed > .chat__row--live,
+.chat__feed > .chat__row--thinking {
+  animation: none;
 }
 
 .chat__quote,

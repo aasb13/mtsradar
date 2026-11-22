@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes, CSSProperties, InputHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, ReactNode, TextareaHTMLAttributes } from 'react'
-import { useEffect, useId, useRef, useState } from 'react'
+import { memo, useEffect, useId, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { initials, isUnassigned, liveSla, priorityMeta } from './format'
@@ -428,8 +428,9 @@ function MarkdownLink({ href, children }: { href?: string; children?: ReactNode 
   )
 }
 
-/** Markdown от BigDad: GFM (таблицы, чек-листы), ссылки в новой вкладке. Сырой HTML не рендерится. */
-export function Markdown({ text, className = '' }: { text: string; className?: string }) {
+/** Markdown от BigDad: GFM (таблицы, чек-листы), ссылки в новой вкладке. Сырой HTML не рендерится.
+ * Мемоизирован: во время стрима лента перерисовывается каждый кадр, историю заново парсить не нужно. */
+export const Markdown = memo(function Markdown({ text, className = '' }: { text: string; className?: string }) {
   return (
     <div className={`md ${className}`}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: MarkdownLink }}>
@@ -437,7 +438,7 @@ export function Markdown({ text, className = '' }: { text: string; className?: s
       </ReactMarkdown>
     </div>
   )
-}
+})
 
 // ---------------- иконки (Lucide-стиль, stroke 1.5) ----------------
 

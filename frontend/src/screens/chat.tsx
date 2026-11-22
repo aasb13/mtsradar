@@ -153,6 +153,14 @@ export function ChatPage() {
             scheduleLive()
           },
           done: (m, session) => {
+            // финальное сообщение приходит вместе со стримом — убираем черновик в тот же кадр,
+            // иначе на миг отрисуется дубль текста и лента дёрнется
+            if (liveFrame.current !== null) {
+              cancelAnimationFrame(liveFrame.current)
+              liveFrame.current = null
+            }
+            liveRef.current = null
+            setStream(null)
             // итог может прийти и по WebSocket раньше стрима — не дублируем
             setMessages(prev => (prev.some(x => x.id === m.id) ? prev : [...prev, m]))
             setSessions(prev => prev.map(x => (x.id === session.id ? session : x)))
@@ -403,7 +411,7 @@ export function ChatPage() {
       </aside>
 
       <section className="chat__main">
-        <div className="chat__feed">
+        <div className="chat__feed" ref={feedRef} onScroll={onFeedScroll}>
           {messages.length === 0 && !waiting && (
             <div className="chat__placeholder">
               <EmptyState
@@ -422,7 +430,7 @@ export function ChatPage() {
             <MessageRow key={m.id} message={m} now={state.now} onReply={setReplyTo} />
           ))}
           {stream !== null && (
-            <div className="chat__row">
+            <div className="chat__row chat__row--live">
               <span className="chat__ava">
                 <SparkIcon size={16} />
               </span>
@@ -448,18 +456,17 @@ export function ChatPage() {
             </div>
           )}
           {waiting && stream === null && (
-            <div className="chat__row">
+            <div className="chat__row chat__row--thinking">
               <span className="chat__ava">
                 <SparkIcon size={16} />
               </span>
-              <div className="bubble bubble--assistant">
+              <div className="bubble bubble--assistant bubble--thinking">
                 <p className="chat__thinking">
                   BigDad думает<span className="chat__dots"><i /><i /><i /></span>
                 </p>
               </div>
             </div>
           )}
-          <div ref={bottomRef} />
         </div>
         <div className="chat__composer">
           {!aiEnabled && (
@@ -566,7 +573,7 @@ interface ChatReply {
 
 const MAX_ATTACHMENTS = 5
 
-function MessageRow({
+const MessageRow = memo(function MessageRow({
   message,
   now,
   onReply,
@@ -636,4 +643,4 @@ function MessageRow({
       )}
     </div>
   )
-}
+})
