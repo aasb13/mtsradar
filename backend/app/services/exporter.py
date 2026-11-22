@@ -1,6 +1,8 @@
 """Экспорт текущего состояния в исходном формате выгрузки (можно сразу импортировать обратно)."""
 
 import asyncio
+import csv
+import io
 import json
 from datetime import datetime
 from pathlib import Path
@@ -24,6 +26,31 @@ async def export_records(include_archived: bool = False) -> list[dict[str, Any]]
     query: dict[str, Any] = {} if include_archived else {"meta.deletedAt": None}
     cursor = get_db().incidents.find(query, {"data": 1}).sort([("data.stateId", 1), ("data.submitDate", 1)])
     return [_plain(doc["data"]) async for doc in cursor]
+
+
+def _csv_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def records_to_csv(records: list[dict[str, Any]]) -> str:
+    """Разделитель ';' и CRLF — чтобы файл открывался в Excel двойным кликом; кодировка (BOM) на ответе."""
+    columns: list[str] = []
+    seen: set[str] = set()
+    for record in records:
+        for key in record:
+            if key not in seen:
+                seen.add(key)
+                columns.append(key)
+    buf = io.StringIO()
+    writer = csv.writer(buf, delimiter=";", lineterminator="\r\n")
+    writer.writerow(columns)
+    for record in records:
+        writer.writerow([_csv_value(record.get(column)) for column in columns])
+    return buf.getvalue()
 
 
 async def export_to_file(path: Path) -> int:

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { formatMinutes } from '../format'
 import { useApp } from '../store'
-import { exportUrl, fetchTeamDescriptions, refreshTeamDescriptions } from '../api'
+import { downloadExport, fetchTeamDescriptions, refreshTeamDescriptions } from '../api'
 import { PRIORITY_SLA_HOURS } from '../types'
 import type { TeamAiDescription } from '../types'
 import { Avatar, Button, DownloadIcon, SeverityBadge, SparkIcon } from '../ui'
@@ -59,7 +59,7 @@ function DailyChart({ points }: { points: DayPoint[] }) {
 }
 
 export function StatsPage() {
-  const { state } = useApp()
+  const { state, showToast } = useApp()
   const aiEnabled = state.dictionaries?.aiEnabled !== false
   const [period, setPeriod] = useState<Period>('month')
   const cards = useMemo(() => [...state.cards.values()], [state.cards])
@@ -254,10 +254,10 @@ export function StatsPage() {
               </button>
             ))}
           </div>
-          <a className="btn btn--secondary" href={exportUrl()} download>
+          <Button variant="secondary" onClick={() => void downloadExport('json').catch(err => showToast(err.message, 'warning'))}>
             <DownloadIcon size={15} />
             Экспорт
-          </a>
+          </Button>
         </div>
       </div>
 

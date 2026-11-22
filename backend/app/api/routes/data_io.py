@@ -11,7 +11,7 @@ from fastapi.responses import Response
 from app.api.deps import AdminUser, CoordinatorUser, ServiceAuth
 from app.core.config import get_settings
 from app.db.mongo import get_db
-from app.services.exporter import export_records, export_to_file, maybe_write_back
+from app.services.exporter import export_records, export_to_file, maybe_write_back, records_to_csv
 from app.services.importer import ImportFormatError, extract_records, import_file, import_records
 from app.services.presenter import public
 from app.services.store import actor_of
@@ -75,6 +75,17 @@ async def export(_: CoordinatorUser, includeArchived: bool = False) -> Response:
     return Response(
         json.dumps(records, ensure_ascii=False, indent=2),
         media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
+
+
+@router.get("/export/csv")
+async def export_csv(_: CoordinatorUser, includeArchived: bool = False) -> Response:
+    records = await export_records(include_archived=includeArchived)
+    name = f"incidents_{datetime.now(UTC):%Y%m%d_%H%M%S}.csv"
+    return Response(
+        records_to_csv(records).encode("utf-8-sig"),
+        media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{name}"'},
     )
 

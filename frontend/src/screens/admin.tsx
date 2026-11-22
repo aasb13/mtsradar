@@ -97,10 +97,10 @@ export function AdminIncidentsPage() {
           <p className="pagehead__sub">Все инциденты · {openCount} открытых, {resolvedToday} завершено сегодня</p>
         </div>
         <div className="pagehead__actions">
-          <a className="btn btn--secondary" href={api.exportUrl()} download>
+          <Button variant="secondary" onClick={() => void api.downloadExport('json').catch(err => showToast(err.message, 'warning'))}>
             <DownloadIcon size={15} />
             Экспорт
-          </a>
+          </Button>
           <Button variant="primary" onClick={() => setCreateOpen(true)}>
             <PlusIcon size={15} />
             Создать инцидент
@@ -1571,10 +1571,10 @@ export function AdminDonePage() {
           <p className="pagehead__sub">Закрыты после проверки — повторный сбой заводится как новый инцидент</p>
         </div>
         <div className="pagehead__actions">
-          <a className="btn btn--secondary" href={api.exportUrl()} download>
+          <Button variant="secondary" onClick={() => void api.downloadExport('csv').catch(err => showToast(err.message, 'warning'))}>
             <DownloadIcon size={15} />
             Экспорт в CSV
-          </a>
+          </Button>
         </div>
       </div>
 

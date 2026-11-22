@@ -454,26 +454,38 @@ export async function uploadChatFile(file: File, retry = true): Promise<{ id: st
   return (await res.json()) as { id: string; name: string; size: number }
 }
 
-/** Скачивание вложения: авторизация заголовком, поэтому blob + временная ссылка. */
-export async function downloadChatFile(id: string, name: string, retry = true): Promise<void> {
+/**
+ * Скачивание по авторизованному запросу: заголовок Authorization нельзя передать
+ * через переход по ссылке, поэтому blob + временная ссылка.
+ */
+async function downloadFile(path: string, fallbackName: string, retry = true): Promise<void> {
   let res: Response
   try {
-    res = await fetch(`/api/ai/chat/files/${encodeURIComponent(id)}`, {
+    res = await fetch(`/api${path}`, {
       headers: { Authorization: `Bearer ${getAccessToken() ?? ''}` },
     })
   } catch (err) {
     throw new ApiError(0, 'Сервер недоступен')
   }
   if (res.status === 401 && retry && getRefreshToken() !== null && (await refreshTokens())) {
-    return downloadChatFile(id, name, false)
+    return downloadFile(path, fallbackName, false)
   }
   if (!res.ok) throw await errorOf(res)
+  const name = res.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1] ?? fallbackName
   const url = URL.createObjectURL(await res.blob())
   const a = document.createElement('a')
   a.href = url
   a.download = name
   a.click()
   URL.revokeObjectURL(url)
+}
+
+export function downloadChatFile(id: string, name: string): Promise<void> {
+  return downloadFile(`/ai/chat/files/${encodeURIComponent(id)}`, name)
+}
+
+export function downloadExport(kind: 'json' | 'csv' = 'json'): Promise<void> {
+  return downloadFile(kind === 'csv' ? '/export/csv' : '/export', `incidents.${kind}`)
 }
 
 // ---------------- пользователи ----------------
@@ -568,8 +580,4 @@ export function fetchStats(): Promise<StatsResponse> {
 
 export function fetchMyIncidents(includeResolved = false): Promise<MyIncidentsResponse> {
   return request<MyIncidentsResponse>(`/my/incidents${includeResolved ? '?includeResolved=true' : ''}`)
-}
-
-export function exportUrl(): string {
-  return '/api/export'
 }
