@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { compareCards, liveSla, priorityMeta, stateLabel, todayWeekday } from '../format'
+import { compareCards, liveSla, priorityMeta, stateLabel } from '../format'
 import { navigate } from '../router'
 import { filterCards, useApp } from '../store'
 import { SyncBadge, SyncSub } from './shell'
@@ -280,7 +280,7 @@ export function KanbanPage() {
         <div>
           <h1>Инциденты смены</h1>
           <p className="pagehead__sub">
-            {todayWeekday(state.now)}
+            Здесь изображены инциденты с нужной информацией, которые вы распределили
             <SyncSub syncedAt={state.syncedAt} now={state.now} />
           </p>
         </div>
@@ -294,9 +294,9 @@ export function KanbanPage() {
 
       <div className="toolrow">
         <div className="tabs">
-          <button type="button" className="tabs__tab tabs__tab--active">Канбан</button>
+          <button type="button" className="tabs__tab tabs__tab--active">Распределенные инциденты</button>
           <button type="button" className="tabs__tab" onClick={() => navigate('/attention')}>
-            Группы внимания
+            Ваши инциденты
           </button>
         </div>
         <div className="fchips">

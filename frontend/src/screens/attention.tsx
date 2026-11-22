@@ -52,7 +52,7 @@ function LevelCard({ card }: { card: Card }) {
   )
 }
 
-/** Колонки «Групп внимания» = уровни приоритета по кейсу (4 → 1). */
+/** Колонки «Ваших инцидентов» = уровни приоритета по кейсу (4 → 1). */
 export function AttentionPage() {
   const { state, dispatch } = useApp()
 
@@ -97,10 +97,10 @@ export function AttentionPage() {
       <div className="toolrow">
         <div className="tabs">
           <button type="button" className="tabs__tab" onClick={() => navigate('/')}>
-            Канбан
+            Распределенные инциденты
           </button>
           <button type="button" className="tabs__tab tabs__tab--active">
-            Группы внимания
+            Ваши инциденты
           </button>
         </div>
         <div className="fchips">

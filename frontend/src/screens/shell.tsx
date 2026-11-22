@@ -13,13 +13,13 @@ interface NavItem {
 
 const NAV: Record<Role, NavItem[]> = {
   coordinator: [
-    { path: '/', label: 'Канбан' },
-    { path: '/attention', label: 'Группы внимания' },
+    { path: '/', label: 'Распределенные инциденты' },
+    { path: '/attention', label: 'Ваши инциденты' },
     { path: '/chat', label: 'BigDad' },
   ],
   admin: [
-    { path: '/', label: 'Канбан' },
-    { path: '/attention', label: 'Группы внимания' },
+    { path: '/', label: 'Распределенные инциденты' },
+    { path: '/attention', label: 'Ваши инциденты' },
     { path: '/chat', label: 'BigDad' },
     { path: '/admin', label: 'Инциденты' },
     { path: '/admin/products', label: 'Продукты' },

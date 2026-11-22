@@ -69,7 +69,7 @@ interface State {
   now: number
 }
 
-/** Ключи фильтра статуса «Групп внимания»: что видно в колонках при активных инцидентах. */
+/** Ключи фильтра статуса «Ваших инцидентов»: что видно в колонках при активных инцидентах. */
 export type StatusFilter = 'unassigned' | 'assigned' | 'progress' | 'research'
 
 const THEME_KEY = 'radar-theme'
