@@ -3817,6 +3817,18 @@ body {
   overflow: hidden;
 }
 
+.toast--link {
+  cursor: pointer;
+}
+
+.toast--link:hover {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+}
+
+:root[data-theme='dark'] .toast--link:hover {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
 .toast--critical::before {
   content: '';
   position: absolute;

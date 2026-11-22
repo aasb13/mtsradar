@@ -320,6 +320,27 @@ function cardFrom(value: unknown): Card | null {
   return isCardPayloadCard(value) ? value : null
 }
 
+/** Сервер присылает документ уведомления прямо в payload события notification.created. */
+function isNotificationPayload(value: unknown): value is Notification {
+  if (typeof value !== 'object' || value === null) return false
+  const o = value as Record<string, unknown>
+  return typeof o.id === 'string' && typeof o.kind === 'string' && typeof o.createdAt === 'string'
+}
+
+function notificationFrom(value: unknown): Notification | null {
+  if (!isNotificationPayload(value)) return null
+  return {
+    id: value.id,
+    userId: typeof value.userId === 'string' ? value.userId : '',
+    kind: value.kind,
+    title: typeof value.title === 'string' ? value.title : null,
+    body: typeof value.body === 'string' ? value.body : null,
+    incidentId: typeof value.incidentId === 'string' ? value.incidentId : null,
+    createdAt: value.createdAt,
+    readAt: typeof value.readAt === 'string' ? value.readAt : null,
+  }
+}
+
 interface AppContextValue {
   state: State
   dispatch: Dispatch<Action>
@@ -338,7 +359,7 @@ interface AppContextValue {
   doUnfreeze: (id: string) => Promise<boolean>
   /** Переименование продукта/команды: все инциденты со старым значением обновляются запросами. */
   doRenameDictItem: (field: 'products' | 'assignedGroups', from: string, to: string) => Promise<boolean>
-  showToast: (text: string, tone?: ToastItem['tone']) => void
+  showToast: (text: string, tone?: ToastItem['tone'], incidentId?: string) => void
 }
 
 const AppContext = createContext<AppContextValue | null>(null)
@@ -356,8 +377,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const stateRef = useRef(state)
   stateRef.current = state
 
-  const showToast = useCallback((text: string, tone: ToastItem['tone'] = 'info') => {
-    dispatch({ type: 'ADD_TOAST', toast: { key: `${Date.now()}|${Math.random()}|${text}`, tone, text, createdAt: Date.now() } })
+  const showToast = useCallback((text: string, tone: ToastItem['tone'] = 'info', incidentId?: string) => {
+    const toast: ToastItem = { key: `${Date.now()}|${Math.random()}|${text}`, tone, text, createdAt: Date.now() }
+    if (incidentId !== undefined && incidentId !== '') toast.incidentId = incidentId
+    dispatch({ type: 'ADD_TOAST', toast })
   }, [])
 
   // тикающие часы для живых SLA-таймеров
@@ -514,10 +537,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
               scheduleDashboardRefresh()
             }
             if (event.type === 'incident.created') {
-              showToast(`${card?.id ?? ''} — ${FEED_TEXT[event.type] ?? 'событие'}`, 'info')
+              showToast(`${card?.id ?? ''} — ${FEED_TEXT[event.type] ?? 'событие'}`, 'info', card?.id)
             }
             if (event.type === 'incident.ai_updated') {
-              showToast('BigDad обновил анализ инцидента', 'info')
+              showToast('BigDad обновил анализ инцидента', 'info', card?.id)
             }
             break
           }
@@ -530,11 +553,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
             }
             const id = String(payload.incidentId ?? card?.id ?? '')
             if (event.type === 'incident.frozen') {
-              showToast(`${id} заморожен — SLA-таймер на паузе`, 'info')
+              showToast(`${id} заморожен — SLA-таймер на паузе`, 'info', id)
             } else if (payload.auto === true) {
-              showToast(`${id} разморожен по расписанию`, 'info')
+              showToast(`${id} разморожен по расписанию`, 'info', id)
             } else {
-              showToast(`${id} разморожен`, 'info')
+              showToast(`${id} разморожен`, 'info', id)
             }
             break
           }
@@ -550,11 +573,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
             break
           }
           case 'notification.created': {
-            const notification = payload.notification as Notification | undefined
-            if (notification !== undefined) {
+            const notification = notificationFrom(payload)
+            if (notification !== null) {
               dispatch({ type: 'ADD_NOTIFICATION', notification })
               if (notification.body !== null && notification.body !== '') {
-                showToast(notification.body, 'info')
+                showToast(notification.body, 'info', notification.incidentId ?? undefined)
               }
             }
             break
@@ -783,7 +806,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     for (const id of nowCritical) {
       if (hadAny && !criticalIdsRef.current.has(id)) {
         beepCritical()
-        showToast(`Новый критический инцидент: ${id}`, 'critical')
+        showToast(`Новый критический инцидент: ${id}`, 'critical', id)
         break
       }
     }

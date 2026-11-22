@@ -4,7 +4,7 @@ import { navigate, useRoute } from '../router'
 import { useApp } from '../store'
 import { BellIcon, CloseIcon, LogoutIcon, MoonIcon, SearchIcon, StatsIcon, SunIcon } from '../ui'
 import * as api from '../api'
-import type { Notification, Role } from '../types'
+import type { Notification, Role, ToastItem } from '../types'
 
 interface NavItem {
   path: string
@@ -131,6 +131,8 @@ function BellMenu({ onClose }: { onClose: () => void }) {
     }
     if (notification.incidentId !== null && notification.incidentId !== undefined) {
       onClose()
+      // панель инцидента есть только у координатора и администратора — им клик ведёт на канбан
+      if (state.user?.role === 'coordinator' || state.user?.role === 'admin') navigate('/')
       dispatch({ type: 'OPEN_PANEL', id: notification.incidentId })
       return
     }
@@ -312,20 +314,42 @@ export function ToastStack() {
       for (const id of timers) window.clearTimeout(id)
     }
   }, [state.toasts, dispatch])
+  const isStaff = state.user?.role === 'coordinator' || state.user?.role === 'admin'
+  const openIncident = (toast: ToastItem) => {
+    if (toast.incidentId === undefined || !isStaff) return
+    dispatch({ type: 'DISMISS_TOAST', key: toast.key })
+    navigate('/')
+    dispatch({ type: 'OPEN_PANEL', id: toast.incidentId })
+  }
   return (
     <div className="toasts">
-      {state.toasts.map(t => (
-        <div key={t.key} className={`toast toast--${t.tone}`}>
-          <span className={`toast__icon toast__icon--${t.tone}`}>
-            {t.tone === 'success' ? <CheckCircleGlyph /> : <InfoGlyph />}
-          </span>
-          <span className="toast__text">{t.text}</span>
-          <button type="button" className="toast__close" onClick={() => dispatch({ type: 'DISMISS_TOAST', key: t.key })} aria-label="Скрыть">
-            <CloseIcon size={14} />
-          </button>
-          {t.tone !== 'critical' && <span className="toast__timer" aria-hidden="true" />}
-        </div>
-      ))}
+      {state.toasts.map(t => {
+        const clickable = t.incidentId !== undefined && isStaff
+        return (
+          <div
+            key={t.key}
+            className={`toast toast--${t.tone} ${clickable ? 'toast--link' : ''}`}
+            onClick={clickable ? () => openIncident(t) : undefined}
+          >
+            <span className={`toast__icon toast__icon--${t.tone}`}>
+              {t.tone === 'success' ? <CheckCircleGlyph /> : <InfoGlyph />}
+            </span>
+            <span className="toast__text">{t.text}</span>
+            <button
+              type="button"
+              className="toast__close"
+              onClick={e => {
+                e.stopPropagation()
+                dispatch({ type: 'DISMISS_TOAST', key: t.key })
+              }}
+              aria-label="Скрыть"
+            >
+              <CloseIcon size={14} />
+            </button>
+            {t.tone !== 'critical' && <span className="toast__timer" aria-hidden="true" />}
+          </div>
+        )
+      })}
     </div>
   )
 }
