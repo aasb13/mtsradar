@@ -1,6 +1,6 @@
 import type { ButtonHTMLAttributes, CSSProperties, InputHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, ReactNode, TextareaHTMLAttributes } from 'react'
 import { useEffect, useId, useRef, useState } from 'react'
-import { initials, liveSla, priorityMeta } from './format'
+import { initials, isUnassigned, liveSla, priorityMeta } from './format'
 import type { Card } from './types'
 
 // ---------------- кнопки ----------------
@@ -40,12 +40,19 @@ const PILL_TEXT: Record<number, string> = {
   20: 'Исследование',
 }
 
-export function StatusPill({ stateId, className = '' }: { stateId: number; className?: string }) {
+export function StatusPill({
+  card,
+  className = '',
+}: {
+  card: Pick<Card, 'stateId' | 'assignedGroupName'>
+  className?: string
+}) {
+  const stateId = card.stateId
   const tone = stateId === 0 || stateId === 20 ? 'todo' : stateId === 2 ? 'work' : stateId === 7 ? 'review' : 'done'
   return (
     <span className={`pill pill--${tone} ${className}`}>
       <span className="pill__dot" />
-      {PILL_TEXT[stateId] ?? `Статус ${stateId}`}
+      {isUnassigned(card) ? 'Не назначено' : PILL_TEXT[stateId] ?? `Статус ${stateId}`}
     </span>
   )
 }

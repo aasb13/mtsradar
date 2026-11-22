@@ -45,7 +45,7 @@ function IncidentDetailBox({ detail, card, actions }: { detail: IncidentDetail |
       <div className="panel__top">
         <span className="panel__id">{card.id}</span>
         <SeverityBadge priorityId={card.priorityId} />
-        <StatusPill stateId={card.stateId} />
+        <StatusPill card={card} />
         <span className="panel__topspacer" />
         <a className="iconbtn" href={card.itsmUrl} target="_blank" rel="noreferrer" title="Открыть в ITSM">
           <LinkIcon size={16} />

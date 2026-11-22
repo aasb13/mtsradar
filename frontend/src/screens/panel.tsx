@@ -160,7 +160,7 @@ export function IncidentPanel() {
         <div className="panel__top">
           <span className="panel__id">{card.id}</span>
           <SeverityBadge priorityId={card.priorityId} />
-          <StatusPill stateId={card.stateId} />
+          <StatusPill card={card} />
           {frozen && (
             <span className="pill pill--frozen">
               <SnowflakeIcon size={12} />

@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
-import { compareCards, todayWeekday } from '../format'
+import { compareCards, stateLabel, todayWeekday } from '../format'
 import { navigate } from '../router'
 import { filterCards, useApp } from '../store'
+import type { StatusFilter } from '../store'
 import { CriticalBanner, FilterChipMenu, KpiRow, SLA_LABELS } from './kanban'
 import { SyncBadge, SyncSub } from './shell'
 import type { Card } from '../types'
@@ -12,6 +13,13 @@ const LEVEL_BG: Record<number, string> = {
   3: '#e8556a',
   2: '#ea7c88',
   1: '#eda3a9',
+}
+
+const STATUS_FILTER_LABELS: Record<StatusFilter, string> = {
+  unassigned: 'Не назначено',
+  assigned: 'Назначен',
+  progress: 'Выполняется',
+  research: 'Исследование ситуации',
 }
 
 function LevelCard({ card }: { card: Card }) {
@@ -38,7 +46,7 @@ function LevelCard({ card }: { card: Card }) {
       <p className="acard__title">{card.header ?? 'Без названия'}</p>
       <p className="acard__line">Продукт: {card.productName ?? '—'}</p>
       <p className="acard__line">
-        Статус: <b style={{ color: 'var(--text)' }}>{card.state ?? card.stateId}</b>
+        Статус: <b style={{ color: 'var(--text)' }}>{stateLabel(card)}</b>
       </p>
     </div>
   )
@@ -119,6 +127,18 @@ export function AttentionPage() {
               { key: 'breached', label: SLA_LABELS.breached },
             ]}
             onSelect={key => dispatch({ type: 'SET_FILTERS', patch: { sla: key as string | null } })}
+          />
+          <FilterChipMenu
+            label="Статус"
+            value={state.filters.status === null ? 'Все' : STATUS_FILTER_LABELS[state.filters.status]}
+            options={[
+              { key: null, label: 'Все' },
+              ...(Object.keys(STATUS_FILTER_LABELS) as StatusFilter[]).map(key => ({
+                key,
+                label: STATUS_FILTER_LABELS[key],
+              })),
+            ]}
+            onSelect={key => dispatch({ type: 'SET_FILTERS', patch: { status: key as StatusFilter | null } })}
           />
         </div>
       </div>

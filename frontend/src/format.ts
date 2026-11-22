@@ -1,4 +1,4 @@
-import type { Card, Sla } from './types'
+import { ASSIGNED, STATE_NAMES, type Card, type Sla } from './types'
 
 const shortDateFmt = new Intl.DateTimeFormat('ru-RU', {
   day: '2-digit',
@@ -199,6 +199,17 @@ export function priorityMeta(priorityId: number): { label: string; tone: 'critic
 /** Колонки «Групп внимания» = уровни приоритета (кейс: группы 4→1). */
 export function levelTitle(priorityId: number): string {
   return `${priorityId} уровень`
+}
+
+/** Инцидент в статусе «Назначен», которому ещё не передан команде: назначить его некому. */
+export function isUnassigned(card: Pick<Card, 'stateId' | 'assignedGroupName'>): boolean {
+  return card.stateId === ASSIGNED && card.assignedGroupName === null
+}
+
+/** Текст статуса карточки; без команды «Назначен» превращается в «Не назначено». */
+export function stateLabel(card: Pick<Card, 'stateId' | 'assignedGroupName' | 'state'>): string {
+  if (isUnassigned(card)) return 'Не назначено'
+  return card.state ?? STATE_NAMES[card.stateId] ?? String(card.stateId)
 }
 
 export function statusPillTone(stateId: number): 'todo' | 'work' | 'review' | 'done' | 'frozen' | 'breach' {

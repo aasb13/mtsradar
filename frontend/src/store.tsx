@@ -3,7 +3,7 @@ import type { Dispatch, ReactNode } from 'react'
 import * as api from './api'
 import { ApiError, clearTokens, getAccessToken, getRefreshToken, storeTokens } from './api'
 import { beepCritical } from './beep'
-import { FEED_TEXT, pluralize } from './format'
+import { FEED_TEXT, isUnassigned, pluralize } from './format'
 import { navigate } from './router'
 import { connectSocket } from './ws'
 import type {
@@ -20,6 +20,7 @@ import type {
   User,
   WsEnvelope,
 } from './types'
+import { ASSIGNED, IN_PROGRESS, RESEARCH } from './types'
 
 export type ConnectionState = 'connecting' | 'online' | 'reconnecting'
 export type Theme = 'light' | 'dark'
@@ -55,12 +56,21 @@ interface State {
   toasts: ToastItem[]
   search: string
   theme: Theme
-  filters: { priorityId: number | null; product: string | null; team: string | null; sla: string | null }
+  filters: {
+    priorityId: number | null
+    product: string | null
+    team: string | null
+    sla: string | null
+    status: StatusFilter | null
+  }
   panelId: string | null
   assignId: string | null
   freezeId: string | null
   now: number
 }
+
+/** Ключи фильтра статуса «Групп внимания»: что видно в колонках при активных инцидентах. */
+export type StatusFilter = 'unassigned' | 'assigned' | 'progress' | 'research'
 
 const THEME_KEY = 'radar-theme'
 // локальные записи администратора: серверный справочник выводится из инцидентов,
@@ -124,7 +134,7 @@ function makeInitialState(): State {
     toasts: [],
     search: '',
     theme,
-    filters: { priorityId: null, product: null, team: null, sla: null },
+    filters: { priorityId: null, product: null, team: null, sla: null, status: null },
     panelId: null,
     assignId: null,
     freezeId: null,
@@ -805,6 +815,14 @@ export function filterCards(
     if (filters.product !== null && card.productName !== filters.product) return false
     if (filters.team !== null && card.assignedGroupName !== filters.team) return false
     if (filters.sla !== null && card.sla.state !== filters.sla) return false
+    if (filters.status !== null) {
+      const match =
+        (filters.status === 'unassigned' && isUnassigned(card)) ||
+        (filters.status === 'assigned' && card.stateId === ASSIGNED && card.assignedGroupName !== null) ||
+        (filters.status === 'progress' && card.stateId === IN_PROGRESS) ||
+        (filters.status === 'research' && card.stateId === RESEARCH)
+      if (!match) return false
+    }
     if (query === '') return true
     return [card.id, card.header, card.productName, card.service, card.assignedEmployee, card.assignedGroupName]
       .some(value => typeof value === 'string' && value.toLowerCase().includes(query))

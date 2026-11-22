@@ -190,7 +190,7 @@ export function AdminIncidentsPage() {
                     <SeverityBadge priorityId={card.priorityId} />
                   </td>
                   <td>
-                    <StatusPill stateId={card.stateId} />
+                    <StatusPill card={card} />
                   </td>
                   <td>{card.assignedGroupName ?? '—'}</td>
                   <td>

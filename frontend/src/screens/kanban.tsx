@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { compareCards, liveSla, priorityMeta, todayWeekday } from '../format'
+import { compareCards, liveSla, priorityMeta, stateLabel, todayWeekday } from '../format'
 import { navigate } from '../router'
 import { filterCards, useApp } from '../store'
 import { SyncBadge, SyncSub } from './shell'
@@ -239,14 +239,14 @@ export function KanbanPage() {
     const target = column.stateIds.find(id => allowed.includes(id) && id !== card.stateId)
     if (target === undefined) {
       const names = column.stateIds.map(id => (id === 0 ? '«К выполнению» (Назначен)' : id === 20 ? '«Исследование»' : id === 2 ? '«В работе»' : id === 7 ? '«На проверке»' : '«Закрыт»'))
-      showToast(`Переход из «${card.state ?? card.stateId}» в ${names.join(' / ')} запрещён правилами`, 'warning')
+      showToast(`Переход из «${stateLabel(card)}» в ${names.join(' / ')} запрещён правилами`, 'warning')
       return
     }
     void doTransition(card, target)
   }
 
   const filtersActive =
-    state.filters.priorityId !== null || state.filters.product !== null || state.filters.team !== null || state.filters.sla !== null || state.search !== ''
+    state.filters.priorityId !== null || state.filters.product !== null || state.filters.team !== null || state.filters.sla !== null || state.filters.status !== null || state.search !== ''
 
   return (
     <>
@@ -329,7 +329,7 @@ export function KanbanPage() {
               className="btn btn--secondary"
               style={{ marginTop: 16 }}
               onClick={() => {
-                dispatch({ type: 'SET_FILTERS', patch: { priorityId: null, product: null, team: null, sla: null } })
+                dispatch({ type: 'SET_FILTERS', patch: { priorityId: null, product: null, team: null, sla: null, status: null } })
                 dispatch({ type: 'SET_SEARCH', search: '' })
               }}
             >
