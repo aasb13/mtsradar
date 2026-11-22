@@ -17,6 +17,7 @@ NOTIFICATION_KINDS = {
     "high.new": "Новый инцидент с высоким приоритетом",
     "sla.danger": "Срок решения скоро истечёт",
     "sla.breached": "Срок решения нарушен",
+    "registration.requested": "Новая заявка на регистрацию",
 }
 
 
@@ -45,7 +46,12 @@ def public_user(u: dict[str, Any]) -> dict[str, Any]:
 
 
 async def create_user(
-    email: str, password: str, full_name: str, role: Role, itsm_login: str | None = None
+    email: str,
+    password: str,
+    full_name: str,
+    role: Role,
+    itsm_login: str | None = None,
+    password_hash: str | None = None,
 ) -> dict[str, Any]:
     doc = {
         "_id": uuid.uuid4().hex,
@@ -53,7 +59,8 @@ async def create_user(
         "fullName": full_name,
         "role": role.value,
         "itsmLogin": itsm_login,
-        "passwordHash": hash_password(password),
+        # при одобрении заявки хеш уже посчитан при подаче — пересчитывать нельзя, пароль не хранится
+        "passwordHash": password_hash or hash_password(password),
         "telegramChatId": None,
         "notificationSettings": default_notification_settings(),
         "createdAt": datetime.now(UTC),
@@ -73,6 +80,11 @@ async def recipients(kind: str) -> list[dict[str, Any]]:
     return await _filter_by_kind(
         get_db().users.find({"deletedAt": None, "role": {"$in": [Role.COORDINATOR, Role.ADMIN]}}), kind
     )
+
+
+async def admins_for(kind: str) -> list[dict[str, Any]]:
+    """Только админы: заявки на регистрацию координаторов не касаются."""
+    return await _filter_by_kind(get_db().users.find({"deletedAt": None, "role": Role.ADMIN}), kind)
 
 
 async def developers_for(kind: str, *, logins: list[str] = (), user_ids: list[str] = ()) -> list[dict[str, Any]]:

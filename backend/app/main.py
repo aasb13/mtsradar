@@ -14,7 +14,20 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import ai, auth, data_io, incidents, itsm_mock, meta, my, notifications, tg, users, ws
+from app.api.routes import (
+    ai,
+    auth,
+    data_io,
+    incidents,
+    itsm_mock,
+    meta,
+    my,
+    notifications,
+    registration,
+    tg,
+    users,
+    ws,
+)
 from app.bus import rabbit
 from app.core.config import get_settings
 from app.core.logging import request_id_var, setup_logging
@@ -86,6 +99,7 @@ async def request_context(request: Request, call_next):
 API = "/api"
 for r in (
     auth.router,
+    registration.router,
     users.router,
     incidents.router,
     meta.router,

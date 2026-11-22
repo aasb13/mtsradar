@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import * as api from '../api'
 import { formatDurationWords, formatShort, priorityMeta, relativeTime } from '../format'
 import { useApp } from '../store'
-import type { Card, Role, User } from '../types'
+import type { Card, RegistrationRequest, Role, User } from '../types'
 import { PRIORITY_SLA_HOURS, PRIORITIES } from '../types'
 import { FilterChipMenu, KpiRow, SLA_LABELS } from './kanban'
 import {
@@ -25,26 +25,6 @@ import {
   UploadIcon,
   UserIcon,
 } from '../ui'
-
-const LOCAL_PRODUCTS_KEY = 'radar-local-products'
-const LOCAL_TEAMS_KEY = 'radar-local-teams'
-
-function localList(key: string): string[] {
-  try {
-    const raw = window.localStorage.getItem(key)
-    return raw === null ? [] : (JSON.parse(raw) as string[])
-  } catch {
-    return []
-  }
-}
-
-function saveLocalList(key: string, values: string[]): void {
-  try {
-    window.localStorage.setItem(key, JSON.stringify(values))
-  } catch (err) {
-    console.error('Не удалось сохранить список', err)
-  }
-}
 
 const ROLE_LABELS: Record<Role, string> = {
   admin: 'Администратор',
@@ -267,7 +247,7 @@ function CreateIncidentModal({ onClose, onCreated }: { onClose: () => void; onCr
   const [files, setFiles] = useState<{ name: string; size: string }[]>([])
   const [busy, setBusy] = useState(false)
 
-  const products = [...(state.dictionaries?.products ?? []), ...localList(LOCAL_PRODUCTS_KEY)]
+  const products = state.dictionaries?.products ?? []
   useEffect(() => {
     if (product === '' && products.length > 0) setProduct(products[0])
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -430,14 +410,14 @@ function CreateIncidentModal({ onClose, onCreated }: { onClose: () => void; onCr
 // ---------------- продукты ----------------
 
 export function AdminProductsPage() {
-  const { state, showToast } = useApp()
+  const { state, dispatch, showToast } = useApp()
   const [addOpen, setAddOpen] = useState(false)
   const [newName, setNewName] = useState('')
 
-  const products = useMemo(() => {
-    const base = [...(state.dictionaries?.products ?? []), ...localList(LOCAL_PRODUCTS_KEY)]
-    return [...new Set(base)].filter(p => p !== '' && p !== 'null').sort()
-  }, [state.dictionaries])
+  const products = useMemo(
+    () => (state.dictionaries?.products ?? []).filter(p => p !== '' && p !== 'null').sort(),
+    [state.dictionaries],
+  )
 
   const counts = useMemo(() => {
     const map = new Map<string, { active: number; critical: Card | null; overdue: boolean; frozen: boolean }>()
@@ -531,7 +511,7 @@ export function AdminProductsPage() {
                     showToast('Введите название продукта', 'warning')
                     return
                   }
-                  saveLocalList(LOCAL_PRODUCTS_KEY, [...new Set([...localList(LOCAL_PRODUCTS_KEY), name])])
+                  dispatch({ type: 'ADD_DICT_ITEMS', field: 'products', items: [name] })
                   setNewName('')
                   setAddOpen(false)
                   showToast(`Продукт «${name}» добавлен`, 'success')
@@ -554,15 +534,15 @@ export function AdminProductsPage() {
 // ---------------- команды ----------------
 
 export function AdminTeamsPage() {
-  const { state, showToast } = useApp()
+  const { state, dispatch, showToast } = useApp()
   const [selected, setSelected] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [newName, setNewName] = useState('')
 
-  const teams = useMemo(() => {
-    const base = [...(state.dictionaries?.assignedGroups ?? []), ...localList(LOCAL_TEAMS_KEY)]
-    return [...new Set(base)].filter(t => t !== '' && t !== 'null')
-  }, [state.dictionaries])
+  const teams = useMemo(
+    () => (state.dictionaries?.assignedGroups ?? []).filter(t => t !== '' && t !== 'null'),
+    [state.dictionaries],
+  )
 
   useEffect(() => {
     if (selected === null && teams.length > 0) setSelected(teams[0])
@@ -722,7 +702,7 @@ export function AdminTeamsPage() {
                     showToast('Введите название команды', 'warning')
                     return
                   }
-                  saveLocalList(LOCAL_TEAMS_KEY, [...new Set([...localList(LOCAL_TEAMS_KEY), name])])
+                  dispatch({ type: 'ADD_DICT_ITEMS', field: 'assignedGroups', items: [name] })
                   setNewName('')
                   setCreateOpen(false)
                   showToast(`Команда «${name}» создана`, 'success')
@@ -745,42 +725,58 @@ export function AdminTeamsPage() {
 // ---------------- пользователи ----------------
 
 export function AdminUsersPage() {
-  const { showToast, pendingUsers, consumePending } = useApp()
+  const { showToast } = useApp()
   const [users, setUsers] = useState<User[]>([])
+  const [requests, setRequests] = useState<RegistrationRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'all' | 'pending' | 'blocked'>('all')
   const [inviteOpen, setInviteOpen] = useState(false)
 
-  const pending = pendingUsers()
-
-  const reload = async () => {
-    setLoading(true)
+  const load = async () => {
     try {
-      const list = await api.fetchUsers()
+      const [list, reqs] = await Promise.all([api.fetchUsers(), api.fetchRegistrationRequests()])
       setUsers(list)
+      setRequests(reqs)
     } catch (err) {
       console.error('Не удалось загрузить пользователей', err)
       showToast('Не удалось загрузить пользователей', 'warning')
-    } finally {
-      setLoading(false)
     }
+  }
+
+  const reload = async () => {
+    setLoading(true)
+    await load()
+    setLoading(false)
   }
 
   useEffect(() => {
     void reload()
+    // новые заявки и решения приходят по WebSocket — молча обновляем список
+    const onChange = () => void load()
+    window.addEventListener('radar:registration', onChange)
+    return () => window.removeEventListener('radar:registration', onChange)
   }, [])
 
-  const assignPending = async (entry: { email: string; fullName: string }, role: Role) => {
-    const password = `Radar-${Math.random().toString(36).slice(2, 10)}1`
+  const approve = async (request: RegistrationRequest, role: Role, itsmLogin: string) => {
     try {
-      await api.createUser({ email: entry.email, password, fullName: entry.fullName, role })
-      consumePending(entry.email)
-      await reload()
-      showToast(`${entry.email} — создан аккаунт, роль ${ROLE_LABELS[role]}`, 'success')
+      await api.approveRegistrationRequest(request.id, role, itsmLogin)
+      showToast(`${request.email} — аккаунт создан, роль ${ROLE_LABELS[role]}`, 'success')
     } catch (err) {
-      console.error('Не удалось создать пользователя', err)
-      showToast(err instanceof Error && err.message !== '' ? err.message : 'Не удалось создать пользователя', 'warning')
+      console.error('Не удалось одобрить заявку', err)
+      showToast(err instanceof Error && err.message !== '' ? err.message : 'Не удалось одобрить заявку', 'warning')
     }
+    await load()
+  }
+
+  const reject = async (request: RegistrationRequest) => {
+    try {
+      await api.rejectRegistrationRequest(request.id)
+      showToast(`Заявка ${request.email} отклонена`, 'info')
+    } catch (err) {
+      console.error('Не удалось отклонить заявку', err)
+      showToast(err instanceof Error && err.message !== '' ? err.message : 'Не удалось отклонить заявку', 'warning')
+    }
+    await load()
   }
 
   const changeRole = async (user: User, role: Role) => {
@@ -813,7 +809,7 @@ export function AdminUsersPage() {
         <div>
           <h1>Пользователи</h1>
           <p className="pagehead__sub">
-            {users.length} пользователей · {pending.length} ждут назначения роли
+            {users.length} пользователей · {requests.length} заявок ждут решения
           </p>
         </div>
         <div className="pagehead__actions">
@@ -827,10 +823,10 @@ export function AdminUsersPage() {
       <div className="toolrow">
         <div className="tabs">
           <button type="button" className={`tabs__tab ${tab === 'all' ? 'tabs__tab--active' : ''}`} onClick={() => setTab('all')}>
-            Все · {users.length + pending.length}
+            Все · {users.length + requests.length}
           </button>
           <button type="button" className={`tabs__tab ${tab === 'pending' ? 'tabs__tab--active' : ''}`} onClick={() => setTab('pending')}>
-            Ожидают роли · {pending.length}
+            Заявки · {requests.length}
           </button>
           <button type="button" className={`tabs__tab ${tab === 'blocked' ? 'tabs__tab--active' : ''}`} onClick={() => setTab('blocked')}>
             Заблокированы
@@ -840,8 +836,8 @@ export function AdminUsersPage() {
 
       {loading ? (
         <p style={{ color: 'var(--text-2)', padding: 24 }}>Загрузка…</p>
-      ) : tab === 'pending' && pending.length === 0 ? (
-        <EmptyState title="Заявок на роль нет" note="Новые регистрации появятся здесь после отправки формы регистрации" />
+      ) : tab === 'pending' && requests.length === 0 ? (
+        <EmptyState title="Заявок на регистрацию нет" note="Новые заявки появятся здесь сразу после отправки формы регистрации" />
       ) : (
         <div className="tablecard">
           <table className="table">
@@ -857,13 +853,23 @@ export function AdminUsersPage() {
             </thead>
             <tbody>
               {tab === 'pending' &&
-                pending.map(entry => (
-                  <PendingRow key={entry.email} entry={entry} onAssign={role => void assignPending(entry, role)} />
+                requests.map(request => (
+                  <PendingRow
+                    key={request.id}
+                    request={request}
+                    onApprove={(role, itsmLogin) => void approve(request, role, itsmLogin)}
+                    onReject={() => void reject(request)}
+                  />
                 ))}
               {tab === 'all' && (
                 <>
-                  {pending.map(entry => (
-                    <PendingRow key={entry.email} entry={entry} onAssign={role => void assignPending(entry, role)} />
+                  {requests.map(request => (
+                    <PendingRow
+                      key={request.id}
+                      request={request}
+                      onApprove={(role, itsmLogin) => void approve(request, role, itsmLogin)}
+                      onReject={() => void reject(request)}
+                    />
                   ))}
                   {rows.map(user => (
                     <tr key={user.id}>
@@ -908,26 +914,47 @@ export function AdminUsersPage() {
   )
 }
 
-function PendingRow({ entry, onAssign }: { entry: { email: string; fullName: string }; onAssign: (role: Role) => void }) {
+function PendingRow({
+  request,
+  onApprove,
+  onReject,
+}: {
+  request: RegistrationRequest
+  onApprove: (role: Role, itsmLogin: string) => void
+  onReject: () => void
+}) {
   const [role, setRole] = useState<Role>('coordinator')
+  const [itsmLogin, setItsmLogin] = useState('')
   return (
     <tr style={{ background: 'rgba(245, 197, 24, 0.16)' }}>
       <td>
         <span className="memberrow">
           <Avatar size="sm" tone="ghost" />
-          {entry.fullName}
+          {request.fullName}
         </span>
       </td>
-      <td className="table__muted">{entry.email}</td>
+      <td className="table__muted">{request.email}</td>
       <td>
         <RoleSelect role={role} onChange={setRole} pending />
       </td>
-      <td className="table__muted">—</td>
-      <td>Ожидает роли</td>
-      <td style={{ textAlign: 'right' }}>
-        <Button variant="primary" className="btn--sm" onClick={() => onAssign(role)}>
+      <td>
+        <input
+          className="input"
+          style={{ height: 36, width: 170 }}
+          value={itsmLogin}
+          onChange={e => setItsmLogin(e.target.value)}
+          placeholder="для разработчика"
+          aria-label="Логин ITSM"
+        />
+      </td>
+      <td>Ожидает решения</td>
+      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+        <Button variant="secondary" className="btn--sm" onClick={onReject}>
+          Отклонить
+        </Button>{' '}
+        <Button variant="primary" className="btn--sm" onClick={() => onApprove(role, itsmLogin.trim())}>
           <UserIcon size={14} />
-          Назначить
+          Одобрить
         </Button>
       </td>
     </tr>

@@ -216,6 +216,11 @@ export function KanbanPage() {
   const [dragId, setDragId] = useState<string | null>(null)
   const [dropColumn, setDropColumn] = useState<string | null>(null)
 
+  // первый BOOT_OK ещё не пришёл — не рисуем пустую доску
+  if (state.dictionaries === null) {
+    return <p style={{ color: 'var(--text-2)', padding: 24 }}>Загрузка…</p>
+  }
+
   const cards = useMemo(
     () => filterCards([...state.cards.values()], state.search, state.filters).sort((a, b) => compareCards(a, b)),
     [state.cards, state.search, state.filters, state.now],

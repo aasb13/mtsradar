@@ -53,7 +53,12 @@ async def _issue(user: dict[str, Any]) -> TokenPair:
 
 
 async def _authenticate(email: str, password: str) -> dict[str, Any]:
-    user = await get_db().users.find_one({"email": email.strip().lower(), "deletedAt": None})
+    email = email.strip().lower()
+    user = await get_db().users.find_one({"email": email, "deletedAt": None})
+    if user is None and await get_db().registration_requests.find_one({"email": email, "status": "pending"}):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Заявка на регистрацию ещё рассматривается — войдите, когда администратор её одобрит"
+        )
     if not user or not verify_password(password, user["passwordHash"]):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Неверный email или пароль")
     return user

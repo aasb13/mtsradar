@@ -2776,6 +2776,17 @@ a {
   color: var(--text-2);
 }
 
+.splash {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.splash__text {
+  color: var(--text-2);
+}
+
 .avatar-stack {
   display: flex;
 }

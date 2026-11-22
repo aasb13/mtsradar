@@ -287,9 +287,14 @@ export interface ToastItem {
   createdAt: number
 }
 
-/** Заявка на регистрацию, созданная на экране «Регистрация» (роль назначает администратор). */
-export interface PendingUser {
+/** Заявка на регистрацию: хранится на сервере до решения администратора. */
+export interface RegistrationRequest {
+  id: string
   email: string
   fullName: string
-  requestedAt: string
+  status: 'pending' | 'approved' | 'rejected'
+  createdAt: string | null
+  decidedAt: string | null
+  role: Role | null
+  itsmLogin: string | null
 }

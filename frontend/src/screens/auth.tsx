@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ApiError } from '../api'
 import { navigate } from '../router'
 import { useApp } from '../store'
 import { BellIcon, SparkIcon, ClockIcon, AlertIcon } from '../ui'
@@ -145,15 +146,17 @@ export function LoginPage() {
 }
 
 export function RegisterPage() {
-  const { registerPending, showToast } = useApp()
+  const { register, showToast } = useApp()
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (busy) return
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !email.toLowerCase().endsWith('@mts.ru')) {
       setError('Только рабочая почта домена @mts.ru')
       return
@@ -167,9 +170,20 @@ export function RegisterPage() {
       return
     }
     setError(null)
-    registerPending(email.trim().toLowerCase(), fullName.trim())
-    showToast('Заявка на регистрацию отправлена', 'success')
-    navigate('/pending')
+    setBusy(true)
+    try {
+      await register(email.trim().toLowerCase(), password, fullName.trim())
+      showToast('Заявка на регистрацию отправлена', 'success')
+      navigate('/pending')
+    } catch (err) {
+      if (err instanceof ApiError) setError(err.message)
+      else {
+        console.error('Не удалось отправить заявку', err)
+        setError('Сервер недоступен. Попробуйте ещё раз.')
+      }
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -198,8 +212,8 @@ export function RegisterPage() {
           <span className="field__hint">{confirm === '' ? null : confirm === password ? 'Пароли совпадают' : 'Пароли не совпадают'}</span>
         </label>
         {error !== null && <div className="authbanner authbanner--error">{error}</div>}
-        <button className="btn btn--primary" style={{ width: '100%' }} type="submit">
-          Создать аккаунт
+        <button className="btn btn--primary" style={{ width: '100%' }} type="submit" disabled={busy}>
+          {busy ? 'Отправляем…' : 'Создать аккаунт'}
         </button>
       </form>
       <p className="auth__alt">
@@ -219,9 +233,8 @@ export function RegisterPage() {
 }
 
 export function PendingPage() {
-  const { logout, pendingUsers } = useApp()
-  const pending = pendingUsers()
-  const last = pending.length > 0 ? pending[pending.length - 1] : null
+  const { state, logout } = useApp()
+  const request = state.pendingRequest
   return (
     <AuthLayout>
       <div className="pendingicon">
@@ -229,12 +242,12 @@ export function PendingPage() {
       </div>
       <h1 style={{ lineHeight: 1.15 }}>Заявка на рассмотрении</h1>
       <p className="auth__form-sub" style={{ maxWidth: 470 }}>
-        Аккаунт создан. Администратор назначит вам роль — обычно это занимает до 30 минут в рабочее время.
+        Заявка отправлена администратору. После одобрения войдите с этой почтой и паролем — роль будет уже назначена.
       </p>
       <div className="waitcard">
         <div className="waitcard__row">
           <p className="waitcard__label">Почта</p>
-          <p className="waitcard__value">{last !== null ? last.email : '—'}</p>
+          <p className="waitcard__value">{request !== null ? request.email : '—'}</p>
         </div>
         <div className="waitcard__row">
           <p className="waitcard__label">Отправлено</p>
@@ -244,13 +257,13 @@ export function PendingPage() {
           <p className="waitcard__label">Статус</p>
           <p className="waitcard__value">
             <span className="waitdot" />
-            Ожидает роли
+            На проверке
           </p>
         </div>
       </div>
       <div className="infobox" style={{ marginTop: 0 }}>
         <AlertIcon size={16} />
-        Мы пришлём письмо и уведомление в Telegram, когда роль будет назначена
+        Обычно заявки рассматривают в рабочее время в течение 30 минут
       </div>
       <button
         className="btn btn--secondary"

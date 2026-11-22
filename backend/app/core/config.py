@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     # ключ для межсервисных вызовов (ИИ-сервис, внешняя ITSM-система): заголовок X-Service-Key
     service_api_key: str = "dev-service-key"
     login_rate_limit_per_min: int = 10
+    # публичный эндпоинт регистрации считает bcrypt на каждый запрос — лимит строже, чем у входа
+    register_rate_limit_per_min: int = 5
     bootstrap_admin_email: str = "admin@example.com"
     bootstrap_admin_password: str = "admin12345"
 

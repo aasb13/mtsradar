@@ -13,6 +13,7 @@ import type {
   Dictionaries,
   IncidentDetail,
   Notification,
+  RegistrationRequest,
   StatsResponse,
   ToastItem,
   User,
@@ -33,6 +34,8 @@ interface State {
   user: User | null
   authError: string | null
   authInProgress: boolean
+  // true, пока при старте проверяется сохранённая сессия — чтобы не мигать логином
+  authChecking: boolean
   connection: ConnectionState
   bootError: string | null
   cards: Map<string, Card>
@@ -46,6 +49,8 @@ interface State {
   coordinatorCount: number
   notifications: Notification[]
   unread: number
+  // заявка, только что отправленная с экрана регистрации (для страницы «На рассмотрении»)
+  pendingRequest: RegistrationRequest | null
   toasts: ToastItem[]
   search: string
   theme: Theme
@@ -59,7 +64,27 @@ interface State {
 
 const THEME_KEY = 'radar-theme'
 const FREEZE_KEY = 'radar-freeze'
-const PENDING_KEY = 'radar-pending-users'
+// локальные записи администратора: серверный справочник выводится из инцидентов,
+// поэтому добавленные до первого инцидента продукты/команды живут здесь
+const LOCAL_PRODUCTS_KEY = 'radar-local-products'
+const LOCAL_TEAMS_KEY = 'radar-local-teams'
+
+function localList(key: string): string[] {
+  try {
+    const raw = window.localStorage.getItem(key)
+    return raw === null ? [] : (JSON.parse(raw) as string[])
+  } catch {
+    return []
+  }
+}
+
+function dictWithLocalItems(dictionaries: Dictionaries): Dictionaries {
+  return {
+    ...dictionaries,
+    products: [...new Set([...dictionaries.products, ...localList(LOCAL_PRODUCTS_KEY)])].sort(),
+    assignedGroups: [...new Set([...dictionaries.assignedGroups, ...localList(LOCAL_TEAMS_KEY)])].sort(),
+  }
+}
 
 const TOAST_LIMIT = 4
 
@@ -81,6 +106,7 @@ function makeInitialState(): State {
     user: null,
     authError: null,
     authInProgress: false,
+    authChecking: getAccessToken() !== null || getRefreshToken() !== null,
     connection: 'connecting',
     bootError: null,
     cards: new Map(),
@@ -94,6 +120,7 @@ function makeInitialState(): State {
     coordinatorCount: 1,
     notifications: [],
     unread: 0,
+    pendingRequest: null,
     toasts: [],
     search: '',
     theme,
@@ -110,8 +137,10 @@ export type Action =
   | { type: 'AUTH_START' }
   | { type: 'AUTH_SUCCESS'; user: User }
   | { type: 'AUTH_FAIL'; message: string }
+  | { type: 'AUTH_CHECKED' }
   | { type: 'AUTH_LOGOUT' }
   | { type: 'BOOT_OK'; cards: Card[]; dashboard: DashboardResponse; dictionaries: Dictionaries }
+  | { type: 'ADD_DICT_ITEMS'; field: 'products' | 'assignedGroups'; items: string[] }
   | { type: 'BOOT_FAIL'; message: string }
   | { type: 'UPSERT_CARDS'; cards: Card[] }
   | { type: 'REMOVE_CARD'; id: string }
@@ -126,6 +155,7 @@ export type Action =
   | { type: 'SET_FILTERS'; patch: Partial<State['filters']> }
   | { type: 'SET_NOTIFICATIONS'; items: Notification[]; unread: number }
   | { type: 'ADD_NOTIFICATION'; notification: Notification }
+  | { type: 'SET_PENDING_REQUEST'; request: RegistrationRequest | null }
   | { type: 'ADD_TOAST'; toast: ToastItem }
   | { type: 'DISMISS_TOAST'; key: string }
   | { type: 'OPEN_PANEL'; id: string | null }
@@ -143,9 +173,11 @@ function reducer(state: State, action: Action): State {
     case 'AUTH_START':
       return { ...state, authInProgress: true, authError: null }
     case 'AUTH_SUCCESS':
-      return { ...state, user: action.user, authInProgress: false, authError: null, bootError: null }
+      return { ...state, user: action.user, authInProgress: false, authError: null, authChecking: false, bootError: null }
     case 'AUTH_FAIL':
       return { ...state, authInProgress: false, authError: action.message }
+    case 'AUTH_CHECKED':
+      return { ...state, authChecking: false }
     case 'AUTH_LOGOUT':
       return { ...makeInitialState(), theme: state.theme }
     case 'BOOT_OK': {
@@ -163,9 +195,21 @@ function reducer(state: State, action: Action): State {
         syncedAt: Date.now(),
         kpi: action.dashboard.kpi,
         unacknowledgedCritical: action.dashboard.unacknowledgedCritical,
-        dictionaries: action.dictionaries,
+        dictionaries: dictWithLocalItems(action.dictionaries),
         bootError: null,
       }
+    }
+    case 'ADD_DICT_ITEMS': {
+      const key = action.field === 'products' ? LOCAL_PRODUCTS_KEY : LOCAL_TEAMS_KEY
+      const values = action.items.filter(x => x !== '' && x !== 'null')
+      try {
+        window.localStorage.setItem(key, JSON.stringify([...new Set([...localList(key), ...values])]))
+      } catch (err) {
+        console.error('Не удалось сохранить список', err)
+      }
+      if (state.dictionaries === null) return state
+      const merged = [...new Set([...state.dictionaries[action.field], ...values])].sort()
+      return { ...state, dictionaries: { ...state.dictionaries, [action.field]: merged } }
     }
     case 'BOOT_FAIL':
       return { ...state, bootError: action.message }
@@ -205,6 +249,8 @@ function reducer(state: State, action: Action): State {
         notifications: [action.notification, ...state.notifications].slice(0, 50),
         unread: action.notification.readAt === null ? state.unread + 1 : state.unread,
       }
+    case 'SET_PENDING_REQUEST':
+      return { ...state, pendingRequest: action.request }
     case 'ADD_TOAST':
       return toast(state, action.toast)
     case 'DISMISS_TOAST':
@@ -257,9 +303,7 @@ interface AppContextValue {
   dispatch: Dispatch<Action>
   login: (email: string, password: string, remember?: boolean) => Promise<void>
   logout: () => Promise<void>
-  registerPending: (email: string, fullName: string) => void
-  pendingUsers: () => { email: string; fullName: string; requestedAt: string }[]
-  consumePending: (email: string) => void
+  register: (email: string, password: string, fullName: string) => Promise<RegistrationRequest>
   refreshDashboard: () => Promise<void>
   refreshBoard: () => Promise<void>
   refreshStats: () => Promise<void>
@@ -306,36 +350,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [state.theme])
 
-  const pendingUsers = useCallback(() => {
-    try {
-      const raw = window.localStorage.getItem(PENDING_KEY)
-      return raw === null ? [] : (JSON.parse(raw) as { email: string; fullName: string; requestedAt: string }[])
-    } catch {
-      return []
-    }
+  // заявка уходит на сервер и живёт там до решения администратора
+  const register = useCallback(async (email: string, password: string, fullName: string) => {
+    const request = await api.register({ email, password, fullName })
+    dispatch({ type: 'SET_PENDING_REQUEST', request })
+    return request
   }, [])
-
-  const consumePending = useCallback((email: string) => {
-    try {
-      const rest = pendingUsers().filter(u => u.email !== email)
-      window.localStorage.setItem(PENDING_KEY, JSON.stringify(rest))
-    } catch (err) {
-      console.error('Не удалось обновить заявки', err)
-    }
-  }, [pendingUsers])
-
-  const registerPending = useCallback(
-    (email: string, fullName: string) => {
-      try {
-        const rest = pendingUsers().filter(u => u.email !== email)
-        rest.push({ email, fullName, requestedAt: new Date().toISOString() })
-        window.localStorage.setItem(PENDING_KEY, JSON.stringify(rest))
-      } catch (err) {
-        console.error('Не удалось сохранить заявку', err)
-      }
-    },
-    [pendingUsers],
-  )
 
   const refreshDashboard = useCallback(async () => {
     try {
@@ -390,8 +410,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const boot = useCallback(
     async (user: User) => {
       dispatch({ type: 'AUTH_SUCCESS', user })
+      // дашборд+справочники — минимум для первого экрана; остальное идёт параллельно
+      const base = Promise.all([api.fetchDashboard(), api.fetchDictionaries()])
+      const notifications = api
+        .fetchNotifications()
+        .then(items => dispatch({ type: 'SET_NOTIFICATIONS', items: items.items, unread: items.unread }))
+        .catch(err => console.error('Не удалось загрузить уведомления', err))
+      const users = api
+        .fetchUsers()
+        .then(all =>
+          dispatch({
+            type: 'SET_COORDINATOR_COUNT',
+            count: all.filter(u => u.role === 'coordinator' && u.deletedAt === null).length,
+          }),
+        )
+        .catch(err => console.error('Не удалось загрузить пользователей', err))
       try {
-        const [dashboard, dictionaries] = await Promise.all([api.fetchDashboard(), api.fetchDictionaries()])
+        const [dashboard, dictionaries] = await base
         const groups = Object.values(dashboard.groups).flat()
         dispatch({
           type: 'BOOT_OK',
@@ -399,16 +434,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           dashboard,
           dictionaries,
         })
+        await Promise.all([notifications, users])
         void refreshBoard()
         void refreshStats()
-        const notifications = await api.fetchNotifications()
-        dispatch({ type: 'SET_NOTIFICATIONS', items: notifications.items, unread: notifications.unread })
-        try {
-          const users = await api.fetchUsers()
-          dispatch({ type: 'SET_COORDINATOR_COUNT', count: users.filter(u => u.role === 'coordinator' && u.deletedAt === null).length })
-        } catch (err) {
-          console.error('Не удалось загрузить пользователей', err)
-        }
       } catch (err) {
         console.error('Не удалось загрузить данные', err)
         dispatch({ type: 'BOOT_FAIL', message: 'Не удалось загрузить данные дашборда' })
@@ -429,6 +457,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         console.error('Сессия недействительна', err)
         clearTokens()
+        dispatch({ type: 'AUTH_CHECKED' })
       }
     })()
     // boot стабилен: ссылочные колбэки
@@ -487,6 +516,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
             }
             break
           }
+          case 'registration.created':
+          case 'registration.decided':
+            // заявки на регистрацию: открытый раздел «Пользователи» перезагружает список
+            window.dispatchEvent(new CustomEvent('radar:registration'))
+            break
           case 'import.completed':
             showToast('Данные обновлены из файла инцидентов', 'success')
             void refreshBoard()
@@ -528,7 +562,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
           dispatch({ type: 'AUTH_FAIL', message: 'Неверная почта или пароль' })
-        } else if (err instanceof ApiError && err.status === 429) {
+        } else if (err instanceof ApiError && (err.status === 403 || err.status === 429)) {
           dispatch({ type: 'AUTH_FAIL', message: err.message })
         } else {
           console.error('Ошибка входа', err)
@@ -648,9 +682,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       dispatch,
       login,
       logout,
-      registerPending,
-      pendingUsers,
-      consumePending,
+      register,
       refreshDashboard,
       refreshBoard,
       refreshStats,
@@ -661,7 +693,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       doUnfreeze,
       showToast,
     }),
-    [state, login, logout, registerPending, pendingUsers, consumePending, refreshDashboard, refreshBoard, refreshStats, doTransition, doAck, doAssign, doFreeze, doUnfreeze, showToast],
+    [state, login, logout, register, refreshDashboard, refreshBoard, refreshStats, doTransition, doAck, doAssign, doFreeze, doUnfreeze, showToast],
   )
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>

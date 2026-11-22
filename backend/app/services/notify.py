@@ -16,7 +16,7 @@ from app.db.mongo import get_db
 from app.domain.enums import Group
 from app.services import push, telegram
 from app.services.presenter import public
-from app.services.users import developers_for, recipients
+from app.services.users import admins_for, developers_for, recipients
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +40,8 @@ def rules_for(event_type: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
         return out
 
     def add(kind: str, severity: str, title: str, body: str, audience: dict[str, Any] | None = None) -> None:
-        # audience=None — координаторы и админы; иначе {"logins": [...], "userIds": [...]} — разработчики
+        # audience=None — координаторы и админы; {"logins": [...], "userIds": [...]} — разработчики;
+        # {"admins": True} — только админы
         out.append(
             {
                 "kind": kind,
@@ -108,7 +109,9 @@ async def deliver(notification: dict[str, Any], card: dict[str, Any] | None) -> 
     """Создаёт уведомление каждому получателю. Возвращает число получателей."""
     notification = dict(notification)
     audience = notification.pop("audience", None)
-    if audience:
+    if audience and audience.get("admins"):
+        users = await admins_for(notification["kind"])
+    elif audience:
         users = await developers_for(
             notification["kind"], logins=audience.get("logins", []), user_ids=audience.get("userIds", [])
         )

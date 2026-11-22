@@ -24,8 +24,9 @@ rsync -a --delete \
 
 cd "$DST"
 
-# зависимости и сборка (node_modules/.venv живут только на таргете, в репозитории их нет)
-cd frontend && npm install --no-audit --no-fund && cd ..
+# зависимости и сборка (node_modules/.venv живут только на таргете, в репозитории их нет);
+# фронт отдаётся production-сборкой (mtsradar-frontend = vite preview), не dev-сервером
+cd frontend && npm install --no-audit --no-fund && npm run build && cd ..
 cd backend && uv sync --frozen --no-dev && cd ..
 
 # перезапуск двух процессов приложения (с sudo-правом для runner, см. sudoers.d/mtsradar-deploy)

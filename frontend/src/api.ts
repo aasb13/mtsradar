@@ -13,6 +13,7 @@ import type {
   IncidentsResponse,
   MyIncidentsResponse,
   NotificationsResponse,
+  RegistrationRequest,
   StatsResponse,
   TeamDescriptionsResponse,
   TeamRecommendation,
@@ -165,6 +166,11 @@ export function login(email: string, password: string): Promise<TokenPair> {
   return request<TokenPair>('/auth/login', { method: 'POST', body: { email, password } })
 }
 
+/** Заявка на регистрацию: аккаунт появится после одобрения администратором. */
+export function register(body: { email: string; password: string; fullName: string }): Promise<RegistrationRequest> {
+  return request<RegistrationRequest>('/auth/register', { method: 'POST', body })
+}
+
 export function logoutRequest(): Promise<void> {
   const refresh = getRefreshToken()
   if (refresh === null) return Promise.resolve()
@@ -311,6 +317,26 @@ export function patchUser(id: string, body: { role?: string; fullName?: string; 
 
 export function deleteUser(id: string): Promise<void> {
   return request<void>(`/users/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+// ---------------- заявки на регистрацию ----------------
+
+export function fetchRegistrationRequests(): Promise<RegistrationRequest[]> {
+  return request<RegistrationRequest[]>('/registration-requests')
+}
+
+export function approveRegistrationRequest(id: string, role: string, itsmLogin?: string): Promise<User> {
+  return request<User>(`/registration-requests/${encodeURIComponent(id)}/approve`, {
+    method: 'POST',
+    body: { role, itsmLogin: itsmLogin === '' ? undefined : itsmLogin },
+  })
+}
+
+export function rejectRegistrationRequest(id: string, reason?: string): Promise<RegistrationRequest> {
+  return request<RegistrationRequest>(`/registration-requests/${encodeURIComponent(id)}/reject`, {
+    method: 'POST',
+    body: { reason: reason === '' ? undefined : reason },
+  })
 }
 
 // ---------------- уведомления ----------------

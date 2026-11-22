@@ -18,7 +18,7 @@ from app.services import access
 log = logging.getLogger(__name__)
 
 # что пересылаем в браузер
-WS_BINDINGS = ["incident.#", "import.#", "notification.user.#"]
+WS_BINDINGS = ["incident.#", "import.#", "notification.user.#", "registration.#"]
 
 
 def personalize(user: dict[str, Any], routing_key: str, envelope: dict[str, Any]) -> dict[str, Any] | None:

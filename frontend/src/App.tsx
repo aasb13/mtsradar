@@ -19,6 +19,14 @@ const HOME_BY_ROLE: Record<Role, string> = {
   viewer: '/qa',
 }
 
+function Splash() {
+  return (
+    <div className="splash">
+      <p className="splash__text">Загрузка…</p>
+    </div>
+  )
+}
+
 function Screens() {
   const { state, dispatch } = useApp()
   const route = useRoute()
@@ -46,6 +54,8 @@ function Screens() {
   }, [state.panelId, dispatch])
 
   if (state.user === null) {
+    // сессия ещё проверяется — не показываем логин, чтобы страница не мигала
+    if (state.authChecking) return <Splash />
     if (route === '/register') return <RegisterPage />
     if (route === '/pending') return <PendingPage />
     return <LoginPage />
