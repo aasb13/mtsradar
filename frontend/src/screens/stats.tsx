@@ -20,6 +20,18 @@ const RATING_SORTS: { key: RatingSortKey; label: string }[] = [
   { key: 'count', label: 'Голоса' },
 ]
 
+// та же сортировка для таблицы «Команды»
+type TeamSortKey = 'name' | 'active' | 'resolved' | 'avg' | 'metRate' | 'load'
+
+const TEAM_SORTS: { key: TeamSortKey; label: string }[] = [
+  { key: 'name', label: 'Команда' },
+  { key: 'active', label: 'Активных' },
+  { key: 'resolved', label: 'Решено' },
+  { key: 'avg', label: 'Ср. время' },
+  { key: 'metRate', label: 'SLA' },
+  { key: 'load', label: 'Загрузка' },
+]
+
 const PERIOD_DAYS: Record<Period, number> = { week: 7, month: 30, quarter: 90 }
 
 interface DayPoint {
@@ -258,6 +270,32 @@ export function StatsPage() {
 
   const maxTeamLoad = Math.max(1, ...teams.map(t => t.active))
 
+  const [teamSortKey, setTeamSortKey] = useState<TeamSortKey>('load')
+  const [teamSortDir, setTeamSortDir] = useState<'asc' | 'desc'>('desc')
+
+  const sortedTeams = useMemo(() => {
+    const dir = teamSortDir === 'asc' ? 1 : -1
+    return [...teams].sort((a, b) => {
+      if (teamSortKey === 'name') return a.name.localeCompare(b.name, 'ru') * dir
+      const loadOf = (t: (typeof teams)[number]) => (t.active / maxTeamLoad) * 100
+      const va = teamSortKey === 'load' ? loadOf(a) : a[teamSortKey]
+      const vb = teamSortKey === 'load' ? loadOf(b) : b[teamSortKey]
+      // «—» (нет данных) всегда в конце
+      if (va === null) return 1
+      if (vb === null) return -1
+      return (va - vb) * dir
+    })
+  }, [teams, maxTeamLoad, teamSortKey, teamSortDir])
+
+  const toggleTeamSort = (key: TeamSortKey) => {
+    if (teamSortKey === key) {
+      setTeamSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
+      return
+    }
+    setTeamSortKey(key)
+    setTeamSortDir(key === 'name' ? 'asc' : 'desc')
+  }
+
   const topDevelopers = useMemo(() => {
     const map = new Map<string, { name: string; done: number; minutes: number[] }>()
     for (const card of resolvedCards) {
@@ -379,16 +417,24 @@ export function StatsPage() {
         <table className="table">
           <thead>
             <tr>
-              <th>Команда</th>
-              <th>Активных</th>
-              <th>Решено</th>
-              <th>Ср. время</th>
-              <th>SLA</th>
-              <th style={{ width: 260 }}>Загрузка</th>
+              {TEAM_SORTS.map(col => (
+                <th key={col.key} style={col.key === 'load' ? { width: 260 } : undefined}>
+                  <button
+                    type="button"
+                    className={`th-sort ${teamSortKey === col.key ? 'th-sort--active' : ''}`}
+                    onClick={() => toggleTeamSort(col.key)}
+                  >
+                    {col.label}
+                    <span className={`th-sort__arrow ${teamSortKey === col.key && teamSortDir === 'asc' ? 'th-sort__arrow--asc' : ''}`}>
+                      <ChevronDownIcon size={12} />
+                    </span>
+                  </button>
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
-            {teams.map(team => (
+            {sortedTeams.map(team => (
               <Fragment key={team.name}>
                 <tr>
                   <td className="table__title">{team.name}</td>
