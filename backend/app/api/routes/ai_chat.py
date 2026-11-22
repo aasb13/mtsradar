@@ -2,18 +2,21 @@
 
 Агент работает от имени пользователя: инструменты из app/ai/chat_tools.py исполняют тот же
 слой действий, что REST, и проверяют те же права. Вложения хранятся в Mongo (chat_files);
-текстовые файлы получают превью, которое уходит модели вместе с сообщением. После ответа
-агента публикуется событие chat.user.{userId} — открытые в других вкладках чаты подхватят
-его по WebSocket.
+текстовые файлы получают превью, которое уходит модели вместе с сообщением.
+Ответ агента стримится (SSE, POST /ai/chat/sessions/{sid}/messages): события
+user → start → text*/tool* → done, при сбое — error. По завершении публикуется событие
+chat.user.{userId} — открытые в других вкладках чаты подхватят итог по WebSocket.
 """
 
+import json
 import uuid
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import quote
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.ai import agent as ai_agent
@@ -124,10 +127,11 @@ def _user_content(
     return "\n\n".join(parts)
 
 
-async def _agent_reply(user: dict[str, Any], session: dict[str, Any], current_content: str) -> dict[str, Any]:
-    """Прогон агента по истории сессии; сохраняет и возвращает сообщение ассистента."""
+async def _agent_events(
+    user: dict[str, Any], session: dict[str, Any], current_content: str
+) -> AsyncIterator[dict[str, Any]]:
+    """Прогон агента по истории сессии; отдаёт события text/tool/final без сохранения."""
     s = get_settings()
-    now = _now()
     all_docs = [d async for d in get_db().chat_messages.find({"sessionId": session["_id"]}).sort("createdAt", 1)]
     past = [d for d in all_docs if d["role"] in ("user", "assistant")][:-1]  # без текущего сообщения
     history: list[dict[str, str]] = []
@@ -147,72 +151,18 @@ async def _agent_reply(user: dict[str, Any], session: dict[str, Any], current_co
         if doc and not doc["meta"].get("deletedAt") and access.can_view(user, doc):
             incident_doc = doc
 
-    ctx = ToolContext(now=now, settings=s, known_groups=await _known_groups(), user=user)
+    ctx = ToolContext(now=_now(), settings=s, known_groups=await _known_groups(), user=user)
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": chat_system_message(user, incident_doc)},
         *history,
         {"role": "user", "content": current_content},
     ]
-    try:
-        text, trace = await ai_agent.run_chat_agent(messages, chat_tools(ctx))
-    except LlmError as e:
-        raise _http_error(e) from e
-    assistant_doc = {
-        "_id": uuid.uuid4().hex,
-        "sessionId": session["_id"],
-        "userId": user["_id"],
-        "role": "assistant",
-        "text": text,
-        "attachments": [],
-        "replyTo": None,
-        "actions": trace,
-        "createdAt": _now(),
-    }
-    await get_db().chat_messages.insert_one(assistant_doc)
-    return assistant_doc
+    async for event in ai_agent.run_chat_agent_stream(messages, chat_tools(ctx)):
+        yield event
 
 
-async def _exchange(
-    user: dict[str, Any],
-    session: dict[str, Any],
-    text: str,
-    attachment_ids: list[str],
-    reply_to: dict[str, Any] | None,
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Сообщение пользователя + ответ агента; обновляет сессию и публикует chat.updated."""
-    files, previews = await _resolve_attachments(user, attachment_ids)
-    now = _now()
-    user_doc = {
-        "_id": uuid.uuid4().hex,
-        "sessionId": session["_id"],
-        "userId": user["_id"],
-        "role": "user",
-        "text": text,
-        "attachments": files,
-        "replyTo": reply_to,
-        "actions": [],
-        "createdAt": now,
-    }
-    await get_db().chat_messages.insert_one(user_doc)
-    assistant_doc = await _agent_reply(user, session, _user_content(text, files, previews, reply_to))
-
-    title = session["title"]
-    if title == UNTITLED or title == "":
-        title = _snippet(text)
-    updated_at = _now()
-    await get_db().chat_sessions.update_one(
-        {"_id": session["_id"]}, {"$set": {"title": title, "updatedAt": updated_at}}
-    )
-    session["title"], session["updatedAt"] = title, updated_at
-    await rabbit.publish(
-        f"chat.user.{user['_id']}",
-        {
-            "sessionId": session["_id"],
-            "session": {"id": session["_id"], "title": title, "updatedAt": _iso(updated_at)},
-            "messages": [_public_message(user_doc), _public_message(assistant_doc)],
-        },
-    )
-    return user_doc, assistant_doc
+def _sse(event: str, data: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
 async def _own_session_or_404(sid: str, user: dict[str, Any]) -> dict[str, Any]:
@@ -245,20 +195,18 @@ async def list_sessions(user: CurrentUser) -> dict[str, Any]:
 
 
 class SessionIn(BaseModel):
-    firstMessage: str | None = Field(None, max_length=MAX_MESSAGE_CHARS)
-    attachmentIds: list[str] = Field(default_factory=list, max_length=MAX_FILES_PER_MESSAGE)
     incidentId: str | None = None
 
 
 @router.post("/ai/chat/sessions", status_code=201)
 async def create_session(body: SessionIn, user: CurrentUser) -> dict[str, Any]:
+    """Пустая сессия; первое сообщение уходит через стрим /messages."""
     _ensure_llm()
     now = _now()
-    first_text = (body.firstMessage or "").strip()
     session = {
         "_id": uuid.uuid4().hex,
         "userId": user["_id"],
-        "title": _snippet(first_text) if first_text else UNTITLED,
+        "title": UNTITLED,
         "incidentId": body.incidentId or None,
         "createdAt": now,
         "updatedAt": now,
@@ -268,11 +216,7 @@ async def create_session(body: SessionIn, user: CurrentUser) -> dict[str, Any]:
         if doc is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Инцидент не найден")
     await get_db().chat_sessions.insert_one(session)
-    messages: list[dict[str, Any]] = []
-    if first_text:
-        user_doc, assistant_doc = await _exchange(user, session, first_text, body.attachmentIds, None)
-        messages = [user_doc, assistant_doc]
-    return {"session": _public_session(session), "messages": [_public_message(m) for m in messages]}
+    return {"session": _public_session(session)}
 
 
 @router.get("/ai/chat/sessions/{sid}")
@@ -306,7 +250,13 @@ class MessageIn(BaseModel):
 
 
 @router.post("/ai/chat/sessions/{sid}/messages")
-async def send_message(sid: str, body: MessageIn, user: CurrentUser) -> dict[str, Any]:
+async def send_message(sid: str, body: MessageIn, user: CurrentUser) -> StreamingResponse:
+    """Сообщение пользователя + стрим ответа агента (SSE).
+
+    События: user (сообщение сохранено), start (id ответа), text (кусок ответа),
+    tool (шаг вызова инструмента), done (итоговое сообщение ассистента + сессия),
+    error (сбой агента — сообщение пользователя уже сохранено).
+    """
     _ensure_llm()
     session = await _own_session_or_404(sid, user)
     reply_to = None
@@ -314,12 +264,72 @@ async def send_message(sid: str, body: MessageIn, user: CurrentUser) -> dict[str
         target = await get_db().chat_messages.find_one({"_id": body.replyToMessageId, "sessionId": sid})
         if target is not None:
             reply_to = {"messageId": target["_id"], "snippet": _snippet(target["text"], 120)}
-    user_doc, assistant_doc = await _exchange(user, session, body.text.strip(), body.attachmentIds, reply_to)
-    return {
-        "session": _public_session(session),
-        "userMessage": _public_message(user_doc),
-        "assistantMessage": _public_message(assistant_doc),
+    files, previews = await _resolve_attachments(user, body.attachmentIds)
+    text = body.text.strip()
+    now = _now()
+    user_doc = {
+        "_id": uuid.uuid4().hex,
+        "sessionId": sid,
+        "userId": user["_id"],
+        "role": "user",
+        "text": text,
+        "attachments": files,
+        "replyTo": reply_to,
+        "actions": [],
+        "createdAt": now,
     }
+    await get_db().chat_messages.insert_one(user_doc)
+    # заголовок ставим сразу по первому сообщению: сессия узнаваема в списке, не дожидаясь агента
+    title = _snippet(text) if session["title"] in (UNTITLED, "") else session["title"]
+    await get_db().chat_sessions.update_one({"_id": sid}, {"$set": {"title": title, "updatedAt": now}})
+    session["title"], session["updatedAt"] = title, now
+
+    async def stream() -> AsyncIterator[str]:
+        yield _sse("user", {"message": _public_message(user_doc), "session": _public_session(session)})
+        assistant_id = uuid.uuid4().hex
+        yield _sse("start", {"id": assistant_id})
+        try:
+            final: dict[str, Any] | None = None
+            async for event in _agent_events(user, session, _user_content(text, files, previews, reply_to)):
+                if event["type"] == "text":
+                    yield _sse("text", {"text": event["text"]})
+                elif event["type"] == "tool":
+                    yield _sse("tool", {"trace": event["trace"]})
+                else:
+                    final = event
+            if final is None:  # цикл агента завершается final либо LlmError — третьего не бывает
+                raise LlmError("ИИ не завершил ответ")
+            assistant_doc = {
+                "_id": assistant_id,
+                "sessionId": sid,
+                "userId": user["_id"],
+                "role": "assistant",
+                "text": final["text"],
+                "attachments": [],
+                "replyTo": None,
+                "actions": final["trace"],
+                "createdAt": _now(),
+            }
+            await get_db().chat_messages.insert_one(assistant_doc)
+            updated_at = _now()
+            await get_db().chat_sessions.update_one({"_id": sid}, {"$set": {"updatedAt": updated_at}})
+            await rabbit.publish(
+                f"chat.user.{user['_id']}",
+                {
+                    "sessionId": sid,
+                    "session": {"id": sid, "title": title, "updatedAt": _iso(updated_at)},
+                    "messages": [_public_message(user_doc), _public_message(assistant_doc)],
+                },
+            )
+            yield _sse("done", {"message": _public_message(assistant_doc), "session": _public_session(session)})
+        except LlmError as e:
+            yield _sse("error", {"message": str(e)})
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # ---------------- вложения ----------------

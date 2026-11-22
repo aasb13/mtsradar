@@ -3,7 +3,7 @@ import * as api from '../api'
 import { relativeTime } from '../format'
 import { navigate, routeQuery } from '../router'
 import { useApp } from '../store'
-import type { ChatAttachment, ChatMessage, ChatSession } from '../types'
+import type { ChatActionTrace, ChatAttachment, ChatMessage, ChatSession } from '../types'
 import {
   AlertIcon,
   Avatar,
@@ -21,6 +21,13 @@ import {
   UndoIcon,
 } from '../ui'
 
+/** Ответ BigDad, который печатается прямо сейчас (стрим). */
+interface LiveReply {
+  id: string
+  text: string
+  actions: ChatActionTrace[]
+}
+
 /** Чат с ИИ-агентом BigDad: сессии, история, сообщения, вложения, ответ на предложение. */
 export function ChatPage() {
   const { state, showToast } = useApp()
@@ -28,6 +35,7 @@ export function ChatPage() {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [waiting, setWaiting] = useState(false)
+  const [stream, setStream] = useState<LiveReply | null>(null)
   const [text, setText] = useState('')
   const [pending, setPending] = useState<ChatAttachment[]>([])
   const [replyTo, setReplyTo] = useState<ChatReply | null>(null)
@@ -35,6 +43,12 @@ export function ChatPage() {
   const fileRef = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const draftRef = useRef<{ incidentId: string; text: string } | null>(null)
+  // зеркало activeId: navigate dispatch'ит hashchange до re-render, state туда опаздывает
+  const activeIdRef = useRef<string | null>(null)
+  const activate = useCallback((id: string | null) => {
+    activeIdRef.current = id
+    setActiveId(id)
+  }, [])
   const aiEnabled = state.dictionaries?.aiEnabled !== false
 
   const activeSession = useMemo(
@@ -53,26 +67,72 @@ export function ChatPage() {
     }
   }, [])
 
-  const openSession = useCallback(async (id: string, replaceUrl: boolean) => {
-    setActiveId(id)
-    setReplyTo(null)
-    try {
-      const res = await api.fetchChatSession(id)
-      setMessages(res.messages)
-      setSessions(prev => {
-        const rest = prev.filter(s => s.id !== id)
-        return [res.session, ...rest]
-      })
-      if (replaceUrl) navigate(`/chat?s=${id}`, true)
-      return res
-    } catch (err) {
-      console.error('Не удалось открыть сессию чата', err)
-      showToast('Не удалось открыть сессию чата', 'warning')
-      setActiveId(null)
-      setMessages([])
-      return null
-    }
-  }, [showToast])
+  const openSession = useCallback(
+    async (id: string, replaceUrl: boolean) => {
+      activate(id)
+      setReplyTo(null)
+      try {
+        const res = await api.fetchChatSession(id)
+        setMessages(res.messages)
+        setSessions(prev => {
+          const rest = prev.filter(s => s.id !== id)
+          return [res.session, ...rest]
+        })
+        if (replaceUrl) navigate(`/chat?s=${id}`, true)
+        return res
+      } catch (err) {
+        console.error('Не удалось открыть сессию чата', err)
+        showToast('Не удалось открыть сессию чата', 'warning')
+        activate(null)
+        setMessages([])
+        return null
+      }
+    },
+    [activate, showToast],
+  )
+
+  /** Сообщение в сессию со стримом ответа BigDad. onUndelivered — если сервер не принял
+   * сообщение (ни одного события стрима не пришло): отправитель возвращает введённый текст. */
+  const runExchange = useCallback(
+    async (
+      sid: string,
+      value: string,
+      attachmentIds: string[],
+      replyToMessageId: string | null,
+      onUndelivered?: () => void,
+    ) => {
+      setWaiting(true)
+      let delivered = false // событие user всегда первое в стриме — значит, сообщение принято
+      try {
+        await api.streamChatMessage(sid, { text: value, attachmentIds, replyToMessageId: replyToMessageId ?? undefined }, {
+          user: m => {
+            delivered = true
+            setMessages(prev => [...prev, m])
+          },
+          start: id => setStream({ id, text: '', actions: [] }),
+          text: chunk => setStream(s => (s === null ? s : { ...s, text: s.text + chunk })),
+          tool: t => setStream(s => (s === null ? s : { ...s, actions: [...s.actions, t] })),
+          done: (m, session) => {
+            // итог может прийти и по WebSocket раньше стрима — не дублируем
+            setMessages(prev => (prev.some(x => x.id === m.id) ? prev : [...prev, m]))
+            setSessions(prev => prev.map(x => (x.id === session.id ? session : x)))
+          },
+          error: message => showToast(message, 'warning'),
+        })
+      } catch (err) {
+        console.error('Не удалось отправить сообщение', err)
+        showToast(
+          err instanceof api.ApiError && err.message !== '' ? err.message : 'BigDad сейчас не отвечает',
+          'warning',
+        )
+        if (!delivered) onUndelivered?.()
+      } finally {
+        setStream(null)
+        setWaiting(false)
+      }
+    },
+    [showToast],
+  )
 
   // начальная загрузка + открытие сессии из ссылки и «Обсудить в чате» (?s=… / ?draft=…)
   useEffect(() => {
@@ -80,7 +140,8 @@ export function ChatPage() {
       const q = routeQuery()
       const sid = q.get('s')
       if (sid !== null) {
-        void openSession(sid, replaceUrl)
+        // navigate сам dispatch'ит hashchange; перезагрузка открытой сессии стёрла бы стрим
+        if (sid !== activeIdRef.current) void openSession(sid, replaceUrl)
         return
       }
       const incidentId = q.get('incident')
@@ -111,24 +172,22 @@ export function ChatPage() {
     const { incidentId, text: draft } = draftRef.current
     draftRef.current = null
     void (async () => {
-      setWaiting(true)
       try {
-        const res = await api.createChatSession({ firstMessage: draft, incidentId })
+        const res = await api.createChatSession({ incidentId })
         setSessions(prev => [res.session, ...prev.filter(s => s.id !== res.session.id)])
-        setActiveId(res.session.id)
-        setMessages(res.messages)
+        activate(res.session.id)
+        setMessages([])
         navigate(`/chat?s=${res.session.id}`, true)
+        await runExchange(res.session.id, draft, [], null)
       } catch (err) {
         console.error('Не удалось начать чат с BigDad', err)
         showToast(
           err instanceof api.ApiError && err.message !== '' ? err.message : 'BigDad сейчас не отвечает',
           'warning',
         )
-      } finally {
-        setWaiting(false)
       }
     })()
-  }, [sessions, waiting, showToast])
+  }, [activate, runExchange, waiting, showToast])
 
   // живое обновление по WebSocket (ответ агента в другой вкладке)
   useEffect(() => {
@@ -156,14 +215,15 @@ export function ChatPage() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [messages, waiting])
+  }, [messages, waiting, stream])
 
   const newSession = () => {
-    setActiveId(null)
+    activate(null)
     setMessages([])
     setReplyTo(null)
     setText('')
     setPending([])
+    setStream(null)
     navigate('/chat', true)
   }
 
@@ -205,36 +265,38 @@ export function ChatPage() {
     const value = text.trim()
     if (value === '' || waiting || !aiEnabled) return
     const attachmentIds = pending.map(a => a.id)
-    const replyToMessageId = replyTo?.messageId
+    const replyToMessageId = replyTo?.messageId ?? null
     const prevPending = pending
     const prevReply = replyTo
+    const restore = () => {
+      // возвращаем то, что пользователь ввёл: сообщение не должно пропасть из-за сбоя
+      setText(value)
+      setPending(prevPending)
+      setReplyTo(prevReply)
+    }
     setText('')
     setPending([])
     setReplyTo(null)
     setWaiting(true)
     try {
-      if (activeId === null) {
-        const res = await api.createChatSession({ firstMessage: value, attachmentIds })
-        setSessions(prev => [res.session, ...prev])
-        setActiveId(res.session.id)
-        const [userMsg, assistantMsg] = res.messages
-        setMessages([userMsg, assistantMsg])
-        navigate(`/chat?s=${res.session.id}`, true)
-      } else {
-        const res = await api.sendChatMessage(activeId, { text: value, attachmentIds, replyToMessageId })
-        setMessages(prev => [...prev, res.userMessage, res.assistantMessage])
+      let sid = activeId
+      if (sid === null) {
+        const res = await api.createChatSession({})
+        sid = res.session.id
+        setSessions(prev => [res.session, ...prev.filter(s => s.id !== sid)])
+        activate(sid)
+        setMessages([])
+        navigate(`/chat?s=${sid}`, true)
       }
+      await runExchange(sid, value, attachmentIds, replyToMessageId, restore)
     } catch (err) {
+      // не удалось даже создать сессию — сообщение не ушло
       console.error('Не удалось отправить сообщение', err)
       showToast(
         err instanceof api.ApiError && err.message !== '' ? err.message : 'BigDad сейчас не отвечает',
         'warning',
       )
-      // возвращаем то, что пользователь ввёл: сообщение не должно пропасть из-за сбоя
-      setText(value)
-      setPending(prevPending)
-      setReplyTo(prevReply)
-    } finally {
+      restore()
       setWaiting(false)
     }
   }
@@ -296,7 +358,33 @@ export function ChatPage() {
           {messages.map(m => (
             <MessageRow key={m.id} message={m} now={state.now} onReply={setReplyTo} />
           ))}
-          {waiting && (
+          {stream !== null && (
+            <div className="chat__row">
+              <span className="chat__ava">
+                <SparkIcon size={16} />
+              </span>
+              <div className="bubble bubble--assistant bubble--live">
+                {stream.actions.length > 0 && (
+                  <div className="bubble__actions">
+                    {stream.actions.map((a, i) => (
+                      <span key={i} className={`trace ${a.ok ? '' : 'trace--fail'}`}>
+                        {a.ok ? <CheckCircleIcon size={13} /> : <AlertIcon size={13} />}
+                        {a.summary}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {stream.text !== '' ? (
+                  <p className="bubble__text">{stream.text}</p>
+                ) : (
+                  <p className="chat__thinking">
+                    BigDad думает<span className="chat__dots"><i /><i /><i /></span>
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+          {waiting && stream === null && (
             <div className="chat__row">
               <span className="chat__ava">
                 <SparkIcon size={16} />

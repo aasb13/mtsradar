@@ -5,7 +5,9 @@
 
 import type {
   BoardResponse,
-  ChatSendResponse,
+  ChatActionTrace,
+  ChatMessage,
+  ChatSession,
   ChatSessionResponse,
   ChatSessionsResponse,
   Comment,
@@ -310,12 +312,8 @@ export function fetchChatSessions(): Promise<ChatSessionsResponse> {
   return request<ChatSessionsResponse>('/ai/chat/sessions')
 }
 
-export function createChatSession(body: {
-  firstMessage?: string
-  attachmentIds?: string[]
-  incidentId?: string
-}): Promise<ChatSessionResponse> {
-  return request<ChatSessionResponse>('/ai/chat/sessions', { method: 'POST', body })
+export function createChatSession(body: { incidentId?: string }): Promise<{ session: ChatSession }> {
+  return request<{ session: ChatSession }>('/ai/chat/sessions', { method: 'POST', body })
 }
 
 export function fetchChatSession(id: string): Promise<ChatSessionResponse> {
@@ -326,11 +324,92 @@ export function deleteChatSession(id: string): Promise<void> {
   return request<void>(`/ai/chat/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
-export function sendChatMessage(
+export interface ChatStreamHandlers {
+  user: (message: ChatMessage) => void
+  start: (id: string) => void
+  text: (chunk: string) => void
+  tool: (trace: ChatActionTrace) => void
+  done: (message: ChatMessage, session: ChatSession) => void
+  error: (message: string) => void
+}
+
+/** Сообщение в чат: ответ BigDad приходит потоковой передачей (SSE по POST) и
+ * отдаётся обработчикам по мере генерации. Бросает ApiError, если запрос не принят. */
+export async function streamChatMessage(
   id: string,
   body: { text: string; attachmentIds?: string[]; replyToMessageId?: string },
-): Promise<ChatSendResponse> {
-  return request<ChatSendResponse>(`/ai/chat/sessions/${encodeURIComponent(id)}/messages`, { method: 'POST', body })
+  handlers: ChatStreamHandlers,
+  retry = true,
+): Promise<void> {
+  let res: Response
+  try {
+    res = await fetch(`/api/ai/chat/sessions/${encodeURIComponent(id)}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${getAccessToken() ?? ''}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  } catch (err) {
+    throw new ApiError(0, 'Сервер недоступен')
+  }
+  if (res.status === 401 && retry && getRefreshToken() !== null && (await refreshTokens())) {
+    return streamChatMessage(id, body, handlers, false)
+  }
+  if (!res.ok) throw await errorOf(res)
+  if (res.body === null) throw new ApiError(0, 'Сервер недоступен')
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let sep = buffer.indexOf('\n\n')
+    while (sep >= 0) {
+      emitSse(buffer.slice(0, sep), handlers)
+      buffer = buffer.slice(sep + 2)
+      sep = buffer.indexOf('\n\n')
+    }
+  }
+}
+
+/** Разбор одного SSE-блока (строки до пустой строки-разделителя). */
+function emitSse(block: string, handlers: ChatStreamHandlers): void {
+  let event = 'message'
+  const data: string[] = []
+  for (const line of block.split('\n')) {
+    if (line.startsWith('event:')) event = line.slice(6).trim()
+    else if (line.startsWith('data:')) data.push(line.slice(5).trimStart())
+  }
+  if (data.length === 0) return
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(data.join('\n'))
+  } catch (err) {
+    console.error('Некорректное событие в стриме чата — пропущено', block)
+    return
+  }
+  if (typeof parsed !== 'object' || parsed === null) return
+  const d = parsed as Record<string, unknown>
+  switch (event) {
+    case 'user':
+      handlers.user(d.message as ChatMessage)
+      break
+    case 'start':
+      handlers.start(String(d.id))
+      break
+    case 'text':
+      handlers.text(typeof d.text === 'string' ? d.text : '')
+      break
+    case 'tool':
+      handlers.tool(d.trace as ChatActionTrace)
+      break
+    case 'done':
+      handlers.done(d.message as ChatMessage, d.session as ChatSession)
+      break
+    case 'error':
+      handlers.error(typeof d.message === 'string' && d.message !== '' ? d.message : 'BigDad сейчас не отвечает')
+      break
+  }
 }
 
 /** Вложение чата: multipart, поэтому отдельный fetch (request() умеет только JSON). */

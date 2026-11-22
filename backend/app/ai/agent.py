@@ -4,7 +4,7 @@
 """
 
 import json
-import re
+from collections.abc import AsyncIterator
 from typing import Any
 
 from app.ai import llm
@@ -39,28 +39,36 @@ async def run_agent(ctx: ToolContext, system: str, user: str, tools: list[Tool])
     raise LlmError("ИИ не завершил анализ за отведённое число шагов")
 
 
-async def run_chat_agent(
+async def run_chat_agent_stream(
     messages: list[dict[str, Any]], tools: list[Tool], registry: dict[str, Tool] | None = None
-) -> tuple[str, list[dict[str, Any]]]:
-    """Цикл чат-агента: модель вызывает инструменты, пока не ответит текстом.
+) -> AsyncIterator[dict[str, Any]]:
+    """Цикл чат-агента со стримингом: модель вызывает инструменты, пока не ответит текстом.
 
     messages — готовая история [system, ...прошлые, текущий user]; цикл дописывает в неё
-    ответы модели и результаты инструментов. Возвращает (текст ответа, след вызовов
-    инструментов для UI: {tool, ok, summary}).
+    ответы модели и результаты инструментов. По ходу отдаёт события
+    {'type': 'text', 'text': кусок ответа} и {'type': 'tool', 'trace': {tool, ok, summary}},
+    в конце — {'type': 'final', 'text': текст ответа, 'trace': весь след вызовов}.
     """
     registry = registry or tool_index(tools)
+    specs = tool_specs(tools)
     trace: list[dict[str, Any]] = []
     last_call: str | None = None
     max_iterations = get_settings().llm_chat_max_iterations
     for _ in range(max_iterations):
-        msg = await llm.chat(messages, tools=tool_specs(tools))
+        msg: dict[str, Any] | None = None
+        async for ev in llm.chat_stream(messages, tools=specs):
+            if ev["type"] == "text":
+                yield ev
+            else:
+                msg = ev["message"]
         messages.append(msg)
         calls = msg.get("tool_calls") or []
         if not calls:
-            text = _strip_reasoning(msg.get("content"))
+            text = (msg.get("content") or "").strip()
             if not text:
                 raise LlmError("ИИ вернул пустой ответ")
-            return text, trace
+            yield {"type": "final", "text": text, "trace": trace}
+            return
         for call in calls:
             name = call.get("function", {}).get("name")
             # зацикливание reasoning-моделей: тот же вызов подряд не исполняем, отправляем модели предупреждение
@@ -78,24 +86,19 @@ async def run_chat_agent(
             else:
                 result = await _execute(registry, call)
             last_call = key
-            trace.append({
+            chip = {
                 "tool": name,
                 "ok": "error" not in result,
                 "summary": str(result.get("summary") or result.get("error") or "данные получены"),
-            })
+            }
+            trace.append(chip)
+            yield {"type": "tool", "trace": chip}
             messages.append({
                 "role": "tool",
                 "tool_call_id": call.get("id"),
                 "content": json.dumps(result, ensure_ascii=False, default=str),
             })
     raise LlmError("ИИ не завершил ответ за отведённое число шагов")
-
-
-def _strip_reasoning(content: Any) -> str:
-    """Reasoning в content (когда у провайдера выключен парсер) наружу не отдаём."""
-    if not isinstance(content, str):
-        return ""
-    return re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
 
 
 async def _execute(registry: dict[str, Tool], call: dict[str, Any]) -> dict[str, Any]:

@@ -320,12 +320,6 @@ export interface ChatSessionResponse {
   messages: ChatMessage[]
 }
 
-export interface ChatSendResponse {
-  session: ChatSession
-  userMessage: ChatMessage
-  assistantMessage: ChatMessage
-}
-
 export interface WsEnvelope {
   eventId?: string
   type: string
