@@ -480,7 +480,7 @@ export function ChatPage() {
           )}
           {messages.length > 0 && <div className="chat__day"><span>Сегодня</span></div>}
           {messages.map(m => (
-            <MessageRow key={m.id} message={m} now={state.now} onReply={setReplyTo} />
+            <MessageRow key={m.id} message={m} now={state.now} userName={state.user?.fullName ?? null} onReply={setReplyTo} />
           ))}
           {stream !== null && (
             <div className="chat__row chat__row--live">
@@ -630,10 +630,12 @@ const MAX_ATTACHMENTS = 5
 const MessageRow = memo(function MessageRow({
   message,
   now,
+  userName,
   onReply,
 }: {
   message: ChatMessage
   now: number
+  userName: string | null
   onReply: (reply: ChatReply) => void
 }) {
   const mine = message.role === 'user'
@@ -692,7 +694,7 @@ const MessageRow = memo(function MessageRow({
       </div>
       {mine && (
         <span className="chat__ava chat__ava--user">
-          <Avatar size="sm" tone="violet" />
+          <Avatar size="sm" tone="violet" name={userName} />
         </span>
       )}
     </div>
