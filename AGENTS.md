@@ -84,3 +84,9 @@ permissions matrix, one-time branch URL, freeze pauses SLA, hotkeys.
 
 Explicitly out of scope (ТЗ §14): real Zabbix/Grafana integration, SMS, SSO/2FA,
 multitenancy, PDF reports — mock data only.
+
+## Commits and pushes
+
+After every commit, immediately push the branch to **both** remotes: `git push origin
+<branch> && git push github <branch>`. This overrides the global default of keeping
+commits local.
