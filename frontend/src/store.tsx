@@ -727,7 +727,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
           case 'team.changed':
             // состав команд (создана/переименована/удалена): перечитываем справочник
+            // и обновляем открытый профиль команды
             void refreshDictionaries()
+            window.dispatchEvent(new CustomEvent('radar:team-changed'))
             break
           case 'chat.updated':
             // чат с BigDad: открытый экран чата дополняет сообщения, список сессий обновляется

@@ -198,6 +198,9 @@ export function ProfilePage({ userId }: { userId?: string }) {
     )
   }
 
+  const teamName = profileUser.team
+  const teamHref = teamName === null || teamName === '' ? null : `/team/${encodeURIComponent(teamName)}`
+
   const applyUser = (updated: User | null) => {
     if (updated === null) return
     dispatch({ type: 'SET_USER', user: updated })
@@ -477,20 +480,20 @@ export function ProfilePage({ userId }: { userId?: string }) {
               <div className="profilefact">
                 <p className="profilefact__label">Команда</p>
                 <p className="profilefact__value">
-                  {profileUser.team === null || profileUser.team === '' ? (
+                  {teamHref === null ? (
                     '—'
                   ) : user.role === 'developer' ? (
-                    profileUser.team
+                    teamName
                   ) : (
                     <a
-                      href={`/team/${encodeURIComponent(profileUser.team)}`}
+                      href={teamHref}
                       title="Открыть профиль команды"
                       onClick={e => {
                         e.preventDefault()
-                        navigate(`/team/${encodeURIComponent(profileUser.team)}`)
+                        navigate(teamHref)
                       }}
                     >
-                      {profileUser.team}
+                      {teamName}
                     </a>
                   )}
                 </p>
