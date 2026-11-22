@@ -1020,7 +1020,7 @@ export function AdminTeamsPage() {
 // ---------------- пользователи ----------------
 
 export function AdminUsersPage() {
-  const { showToast } = useApp()
+  const { state, showToast } = useApp()
   const [users, setUsers] = useState<User[]>([])
   const [requests, setRequests] = useState<RegistrationRequest[]>([])
   const [loading, setLoading] = useState(true)
@@ -1081,7 +1081,7 @@ export function AdminUsersPage() {
       showToast(`${user.email} — роль ${ROLE_LABELS[role]}`, 'success')
     } catch (err) {
       console.error('Не удалось изменить роль', err)
-      showToast('Не удалось изменить роль', 'warning')
+      showToast(err instanceof Error && err.message !== '' ? err.message : 'Не удалось изменить роль', 'warning')
     }
   }
 
@@ -1176,7 +1176,11 @@ export function AdminUsersPage() {
                       </td>
                       <td className="table__muted">{user.email}</td>
                       <td>
-                        <RoleSelect role={user.role} onChange={role => void changeRole(user, role)} />
+                        {user.id === state.user?.id ? (
+                          ROLE_LABELS[user.role]
+                        ) : (
+                          <RoleSelect role={user.role} onChange={role => void changeRole(user, role)} />
+                        )}
                       </td>
                       <td className="table__muted">{user.itsmLogin ?? '—'}</td>
                       <td>{user.deletedAt === null ? 'Активен' : 'Заблокирован'}</td>

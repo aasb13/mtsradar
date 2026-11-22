@@ -57,7 +57,9 @@ async def create(body: UserCreate, _: AdminUser) -> dict[str, Any]:
 
 
 @router.patch("/{user_id}")
-async def update(user_id: str, body: UserUpdate, _: AdminUser) -> dict[str, Any]:
+async def update(user_id: str, body: UserUpdate, admin: AdminUser) -> dict[str, Any]:
+    if body.role is not None and user_id == admin["_id"]:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нельзя изменить роль самому себе")
     upd: dict[str, Any] = {}
     if body.fullName is not None:
         upd["fullName"] = body.fullName
@@ -73,7 +75,7 @@ async def update(user_id: str, body: UserUpdate, _: AdminUser) -> dict[str, Any]
         res = await get_db().users.update_one({"_id": user_id, "deletedAt": None}, {"$set": upd})
         if res.matched_count == 0:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Пользователь не найден")
-    return await get_user(user_id, _)
+    return await get_user(user_id, admin)
 
 
 @router.delete("/{user_id}", status_code=204)
