@@ -1,0 +1,15 @@
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    prefer_single_quotes: true
+    require_trailing_commas: false
+    avoid_print: true
+
+analyzer:
+  errors:
+    # material.dart объявлен устаревшим только в будущих версиях Flutter (переезд в material_ui)
+    deprecated_member_use: ignore
+
+formatter:
+  page_width: 120

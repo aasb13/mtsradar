@@ -1,0 +1,35 @@
+name: mts_radar
+description: "МТС Радар — мобильное приложение: уведомления об инцидентах и просмотр текущих инцидентов."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.8.0
+
+# Диапазоны версий широкие специально: `flutter pub get` сам выберет новейшие версии,
+# совместимые с вашей версией Flutter.
+dependencies:
+  flutter:
+    sdk: flutter
+  firebase_core: '>=4.0.0 <6.0.0'           # push-уведомления (необязательно, см. README)
+  firebase_messaging: '>=16.0.0 <18.0.0'
+  flutter_secure_storage: '>=10.0.0 <12.0.0' # токены входа в защищённом хранилище
+  url_launcher: ^6.3.0                       # «Открыть в ITSM»
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: '>=5.0.0 <7.0.0'
+
+flutter:
+  uses-material-design: true
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.ttf
+        - asset: assets/fonts/Inter-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Inter-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Inter-Bold.ttf
+          weight: 700
