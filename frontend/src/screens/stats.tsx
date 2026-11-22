@@ -193,7 +193,6 @@ export function StatsPage() {
               )
         return { name, active, resolved: resolvedList.length, avg, metRate }
       })
-      .filter(t => t.active > 0 || t.resolved > 0)
       .sort((a, b) => b.active - a.active)
   }, [cards, resolvedCards, state.stats, state.dictionaries])
 
