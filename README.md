@@ -4,6 +4,8 @@ Built during my **second hackathon** for the MTS (МТС) case: a live dashboard
 
 > Hackathon prototype, not production software. There is no license file in the repository yet.
 
+> **Outcome:** no prize. I'm angry that none of the hackathons won anything.
+
 ## What it does
 
 - Watches every `*.json` file in `data/`; an edit is imported, diffed and pushed to open browsers over WebSocket without reload.
